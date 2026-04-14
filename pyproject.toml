@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "rag-agent-parser"
+version = "0.1.0"
+description = "RAG data parsing pipeline for scraping, chunking, and JSONL export."
+authors = ["astarovo <astarovo@example.com>"]
+readme = "parser/README.md"
+packages = [{ include = "parser" }]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "*"
+trafilatura = "*"
+
+[tool.poetry.scripts]
+rag-parser = "parser.main:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+

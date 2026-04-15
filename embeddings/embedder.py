@@ -138,4 +138,3 @@ def build_chroma_collection(
         persist_directory=persist_directory,
         collection_name=collection_name,
     )
-

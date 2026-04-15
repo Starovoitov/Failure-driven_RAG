@@ -1,18 +1,13 @@
 from __future__ import annotations
 
 import math
-import re
 
-
-def simple_tokenize(text: str) -> list[str]:
-    """Split text into lightweight word/punctuation tokens."""
-    # Lightweight tokenization fallback without external tokenizer dependency.
-    return re.findall(r"\w+|[^\w\s]", text, flags=re.UNICODE)
+from utils.common import tokenize
 
 
 def token_count(text: str) -> int:
     """Return token count using the internal lightweight tokenizer."""
-    return len(simple_tokenize(text))
+    return len(tokenize(text))
 
 
 def chunk_text(
@@ -27,7 +22,7 @@ def chunk_text(
     if not 0 <= overlap_ratio < 1:
         raise ValueError("overlap_ratio must be in [0, 1).")
 
-    tokens = simple_tokenize(text)
+    tokens = tokenize(text)
     if not tokens:
         return []
     if len(tokens) <= max_tokens:

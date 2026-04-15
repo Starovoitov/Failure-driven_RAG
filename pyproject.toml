@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "RAG data parsing pipeline for scraping, chunking, and JSONL export."
 authors = ["astarovo <astarovo@example.com>"]
 readme = "parser/README.md"
-packages = [{ include = "parser" }]
+packages = [{ include = "parser" }, { include = "embeddings" }, { include = "retrieval" }, { include = "utils" }]
 
 [tool.poetry.dependencies]
 python = "^3.10"

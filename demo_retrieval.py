@@ -15,7 +15,7 @@ from sentence_transformers import SentenceTransformer
 
 from ingestion.loaders import (
     load_bm25_documents_from_dataset,
-    load_semantic_documents_from_chroma,
+    load_semantic_documents_from_faiss,
 )
 from retrieval.bm25 import BM25Document, BM25Index
 from retrieval.hybrid import hybrid_search
@@ -30,8 +30,8 @@ def run_demo(
     top_k: int,
     model_name: str,
     dataset_path: str,
-    chroma_path: str,
-    collection_name: str,
+    faiss_path: str,
+    index_name: str,
 ) -> None:
     dataset_docs = load_bm25_documents_from_dataset(dataset_path=dataset_path)
     if not dataset_docs:
@@ -54,13 +54,13 @@ def run_demo(
         show_progress_bar=False,
     )[0].tolist()
 
-    semantic_docs = load_semantic_documents_from_chroma(
-        persist_directory=chroma_path,
-        collection_name=collection_name,
+    semantic_docs = load_semantic_documents_from_faiss(
+        persist_directory=faiss_path,
+        index_name=index_name,
     )
     if not semantic_docs:
         raise ValueError(
-            f"No embeddings found in Chroma collection '{collection_name}' at {chroma_path}. "
+            f"No embeddings found in FAISS index '{index_name}' at {faiss_path}. "
             "Run parser + embedding ingestion first."
         )
     semantic_results = search_semantic(query_vec, semantic_docs, top_k=top_k)
@@ -115,14 +115,14 @@ def main() -> None:
         help="Dataset JSONL created by parser pipeline.",
     )
     parser.add_argument(
-        "--chroma-path",
-        default="data/chroma",
-        help="Persistent Chroma directory containing chunk embeddings.",
+        "--faiss-path",
+        default="data/faiss",
+        help="Persistent FAISS directory containing chunk embeddings.",
     )
     parser.add_argument(
-        "--collection",
+        "--index",
         default="rag_chunks",
-        help="Chroma collection name with precomputed embeddings.",
+        help="FAISS index name with precomputed embeddings.",
     )
     args = parser.parse_args()
     run_demo(
@@ -130,8 +130,8 @@ def main() -> None:
         top_k=args.top_k,
         model_name=args.model,
         dataset_path=args.dataset,
-        chroma_path=args.chroma_path,
-        collection_name=args.collection,
+        faiss_path=args.faiss_path,
+        index_name=args.index,
     )
 
 

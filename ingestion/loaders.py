@@ -4,9 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, Iterator
 
-import chromadb
-
-from embeddings.embedder import generate_embeddings, upsert_embeddings_to_chroma
+from embeddings.embedder import generate_embeddings, upsert_embeddings_to_faiss
+from embeddings.faiss_store import load_semantic_documents_from_faiss as load_from_faiss_store
 from parser.pipeline import run_pipeline
 from retrieval.semantic import SemanticDocument
 
@@ -21,19 +20,19 @@ def _read_raw_chunks(dataset_path: str) -> Iterator[dict[str, Any]]:
             yield item
 
 
-def run_parser_and_upsert_to_chroma(
+def run_parser_and_upsert_to_faiss(
     dataset_path: str = "data/rag_dataset.jsonl",
-    persist_directory: str = "data/chroma",
-    collection_name: str = "rag_chunks",
+    persist_directory: str = "data/faiss",
+    index_name: str = "rag_chunks",
     model_name: str = "intfloat/e5-small-v2",
     min_tokens: int = 300,
     max_tokens: int = 800,
     overlap_ratio: float = 0.15,
 ) -> dict[str, int]:
     """
-    Run parser pipeline and upsert chunk embeddings into Chroma.
+    Run parser pipeline and persist chunk embeddings into FAISS.
 
-    Returns parser stats with additional embedding/chroma counters.
+    Returns parser stats with additional embedding/faiss counters.
     """
     stats = run_pipeline(
         output_path=dataset_path,
@@ -57,10 +56,10 @@ def run_parser_and_upsert_to_chroma(
         input_jsonl=str(embedding_input_path),
         model_name=model_name,
     )
-    upserted = upsert_embeddings_to_chroma(
+    upserted = upsert_embeddings_to_faiss(
         embedding_records=records,
         persist_directory=persist_directory,
-        collection_name=collection_name,
+        index_name=index_name,
     )
     stats["raw_chunks_for_embedding"] = raw_chunks_count
     stats["embeddings_upserted"] = upserted
@@ -79,35 +78,12 @@ def load_bm25_documents_from_dataset(dataset_path: str = "data/rag_dataset.jsonl
     ]
 
 
-def load_semantic_documents_from_chroma(
-    persist_directory: str = "data/chroma",
-    collection_name: str = "rag_chunks",
+def load_semantic_documents_from_faiss(
+    persist_directory: str = "data/faiss",
+    index_name: str = "rag_chunks",
 ) -> list[SemanticDocument]:
-    """Load documents and precomputed embeddings from Chroma."""
-    client = chromadb.PersistentClient(path=persist_directory)
-    collection = client.get_or_create_collection(name=collection_name)
-    rows = collection.get(include=["documents", "embeddings", "metadatas"])
-
-    ids = rows.get("ids", [])
-    documents = rows.get("documents", [])
-    embeddings = rows.get("embeddings", [])
-    metadatas = rows.get("metadatas", [])
-
-    results: list[SemanticDocument] = []
-    for idx, doc_id in enumerate(ids):
-        text = documents[idx] if idx < len(documents) else ""
-        embedding = embeddings[idx] if idx < len(embeddings) else []
-        metadata = metadatas[idx] if idx < len(metadatas) else {}
-        if text is None or text == "":
-            continue
-        if embedding is None or len(embedding) == 0:
-            continue
-        results.append(
-            SemanticDocument(
-                doc_id=doc_id,
-                text=text,
-                embedding=list(embedding),
-                metadata=metadata if isinstance(metadata, dict) else {},
-            )
-        )
-    return results
+    """Load documents and precomputed embeddings from a persisted FAISS store."""
+    return load_from_faiss_store(
+        persist_directory=persist_directory,
+        index_name=index_name,
+    )

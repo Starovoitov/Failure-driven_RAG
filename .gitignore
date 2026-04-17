@@ -5,3 +5,5 @@ __pycache__/
 .DS_Store
 data/*
 poetry.lock
+.vscode/launch.json
+.vscode/settings.json

@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-import chromadb
 from sentence_transformers import SentenceTransformer
+
+from embeddings.faiss_store import save_faiss_index
 
 
 def prepare_embedding_input(
@@ -30,23 +31,6 @@ def prepare_embedding_input(
             f_out.write(json.dumps(payload, ensure_ascii=False) + "\n")
             written += 1
     return written
-
-
-def _sanitize_metadata(metadata: dict[str, Any]) -> dict[str, str | int | float | bool]:
-    """
-    Convert metadata values to Chroma-safe scalar types.
-
-    Chroma metadata supports only string, number, and boolean values.
-    """
-    sanitized: dict[str, str | int | float | bool] = {}
-    for key, value in metadata.items():
-        if isinstance(value, (str, int, float, bool)):
-            sanitized[key] = value
-        elif value is None:
-            sanitized[key] = "null"
-        else:
-            sanitized[key] = json.dumps(value, ensure_ascii=False)
-    return sanitized
 
 
 def generate_embeddings(
@@ -95,46 +79,34 @@ def generate_embeddings(
     return records
 
 
-def upsert_embeddings_to_chroma(
+def upsert_embeddings_to_faiss(
     embedding_records: list[dict[str, Any]],
-    persist_directory: str = "data/chroma",
-    collection_name: str = "rag_chunks",
-    batch_size: int = 256,
+    persist_directory: str = "data/faiss",
+    index_name: str = "rag_chunks",
 ) -> int:
-    """Write embedding records into a local persistent Chroma collection."""
-    dst = Path(persist_directory)
-    dst.mkdir(parents=True, exist_ok=True)
-
-    client = chromadb.PersistentClient(path=str(dst))
-    collection = client.get_or_create_collection(name=collection_name)
-
-    total = len(embedding_records)
-    for start in range(0, total, batch_size):
-        chunk = embedding_records[start : start + batch_size]
-        collection.upsert(
-            ids=[item["id"] for item in chunk],
-            documents=[item["text"] for item in chunk],
-            metadatas=[_sanitize_metadata(item.get("metadata", {})) for item in chunk],
-            embeddings=[item["embedding"] for item in chunk],
-        )
-    return total
+    """Persist embedding records into a local FAISS index + sidecar store."""
+    return save_faiss_index(
+        embedding_records=embedding_records,
+        persist_directory=persist_directory,
+        index_name=index_name,
+    )
 
 
-def build_chroma_collection(
+def build_faiss_index(
     input_jsonl: str = "data/embeddings_input.jsonl",
-    persist_directory: str = "data/chroma",
-    collection_name: str = "rag_chunks",
+    persist_directory: str = "data/faiss",
+    index_name: str = "rag_chunks",
     model_name: str = "intfloat/e5-small-v2",
 ) -> int:
     """
-    End-to-end helper: read JSONL, generate embeddings, and upsert into Chroma.
+    End-to-end helper: read JSONL, generate embeddings, and persist into FAISS.
     """
     records = generate_embeddings(
         input_jsonl=input_jsonl,
         model_name=model_name,
     )
-    return upsert_embeddings_to_chroma(
+    return upsert_embeddings_to_faiss(
         embedding_records=records,
         persist_directory=persist_directory,
-        collection_name=collection_name,
+        index_name=index_name,
     )

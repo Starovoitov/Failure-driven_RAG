@@ -43,7 +43,7 @@ Optional chunk config:
 poetry run rag-parser --min-tokens 300 --max-tokens 800 --overlap-ratio 0.15
 ```
 
-## Optional embeddings + Chroma
+## Optional embeddings + FAISS
 
 ```python
 from embeddings.embedder import prepare_embedding_input
@@ -55,14 +55,14 @@ prepare_embedding_input(
 
 This prepares records for embedding generation.
 
-Generate embeddings with `intfloat/e5-small-v2` and store them in local Chroma:
+Generate embeddings with `intfloat/e5-small-v2` and store them in local FAISS:
 
 ```python
-from embeddings.embedder import build_chroma_collection
-build_chroma_collection(
+from embeddings.embedder import build_faiss_index
+build_faiss_index(
     input_jsonl="data/embeddings_input.jsonl",
-    persist_directory="data/chroma",
-    collection_name="rag_chunks",
+    persist_directory="data/faiss",
+    index_name="rag_chunks",
 )
 ```
 
@@ -72,10 +72,10 @@ If you want to run this helper from Poetry:
 poetry run python -c "from embeddings.embedder import prepare_embedding_input; prepare_embedding_input()"
 ```
 
-End-to-end (prepare input + embed + Chroma upsert):
+End-to-end (prepare input + embed + FAISS persist):
 
 ```bash
-poetry run python -c "from embeddings.embedder import prepare_embedding_input, build_chroma_collection; prepare_embedding_input(); build_chroma_collection()"
+poetry run python -c "from embeddings.embedder import prepare_embedding_input, build_faiss_index; prepare_embedding_input(); build_faiss_index()"
 ```
 
 ## Notes

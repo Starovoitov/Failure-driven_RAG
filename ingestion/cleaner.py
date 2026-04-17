@@ -3,37 +3,23 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-import chromadb
-
-
-def cleanup_chroma_db(
-    persist_directory: str = "data/chroma",
-    collection_name: str = "rag_chunks",
+def cleanup_faiss_db(
+    persist_directory: str = "data/faiss",
+    index_name: str = "rag_chunks",
     drop_persist_directory: bool = False,
 ) -> dict[str, bool]:
-    """
-    Clean up Chroma DB by deleting a collection and optionally removing DB files.
-
-    Returns status flags describing what was removed.
-    """
+    """Clean up FAISS index folder and optionally remove all persisted FAISS data."""
     db_path = Path(persist_directory)
-    collection_deleted = False
+    index_path = db_path / index_name
+    index_deleted = False
     directory_deleted = False
 
-    if db_path.exists():
-        client = chromadb.PersistentClient(path=str(db_path))
-        try:
-            client.delete_collection(name=collection_name)
-            collection_deleted = True
-        except Exception:  # noqa: BLE001
-            # No-op if collection does not exist or cannot be deleted.
-            collection_deleted = False
+    if index_path.exists():
+        shutil.rmtree(index_path)
+        index_deleted = True
 
     if drop_persist_directory and db_path.exists():
         shutil.rmtree(db_path)
         directory_deleted = True
 
-    return {
-        "collection_deleted": collection_deleted,
-        "directory_deleted": directory_deleted,
-    }
+    return {"index_deleted": index_deleted, "directory_deleted": directory_deleted}

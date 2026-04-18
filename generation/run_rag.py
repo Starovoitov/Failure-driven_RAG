@@ -13,31 +13,54 @@ from retrieval.semantic import search_semantic
 
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-small-v2"
 
+KNOWN_LLM_PROVIDERS: tuple[str, ...] = ("openai", "gigachat", "ollama", "qwen")
 
-def _config_for_provider(provider: str, model: str | None) -> LLMConfig:
-    provider = provider.lower()
-    if provider == "openai":
+
+def get_llm_config(provider: str, model: str | None = None) -> LLMConfig:
+    """
+    Single source of truth for OpenAI-compatible LLM endpoints (incl. GigaChat, Ollama gateway, Qwen).
+
+    `model` overrides the env default for that provider when set.
+    """
+    key = provider.lower()
+    if key == "openai":
         return LLMConfig(
             provider="openai",
             model=model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             api_base=os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1/chat/completions"),
             api_key=os.getenv("OPENAI_API_KEY"),
         )
-    if provider == "gigachat":
+    if key == "gigachat":
         return LLMConfig(
             provider="gigachat",
             model=model or os.getenv("GIGACHAT_MODEL", "GigaChat-Pro"),
             api_base=os.getenv("GIGACHAT_API_BASE", "https://api.gigachat.ru/v1/chat/completions"),
             api_key=os.getenv("GIGACHAT_API_KEY"),
         )
-    if provider == "ollama":
+    if key == "ollama":
         return LLMConfig(
-            provider="ollama",
-            model=model or os.getenv("OLLAMA_MODEL", "llama3.1:8b"),
-            api_base=os.getenv("OLLAMA_API_BASE", "http://localhost:11434/v1/chat/completions"),
-            api_key=os.getenv("OLLAMA_API_KEY"),
+            provider="openai",
+            model=model or "Lexi-Llama-3-8B-Uncensored_Q4_K_M",
+            api_base=os.getenv("OLLAMA_API_BASE", "http://127.0.0.1:1337/v1/chat/completions"),
+            api_key=f"{os.getenv("OLLAMA_API_KEY")}",
+        )
+    if key == "qwen":
+        return LLMConfig(
+            provider="openai",
+            model=model or os.getenv("QWEN_MODEL", "qwen-plus"),
+            api_base=os.getenv(
+                "QWEN_API_BASE",
+                "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+            ),
+            api_key=f"{os.getenv("QWEN_API_KEY")}",
         )
     raise ValueError(f"Unsupported provider: {provider}")
+
+
+def build_model_configs() -> dict[str, LLMConfig]:
+    """Named provider configs for multi-model experiments (env-driven defaults)."""
+    return {name: get_llm_config(name) for name in KNOWN_LLM_PROVIDERS}
+
 
 
 def run_rag(
@@ -88,7 +111,7 @@ def run_rag(
         max_context_tokens=max_context_tokens,
     )
 
-    conf = _config_for_provider(provider=provider, model=model)
+    conf = get_llm_config(provider=provider, model=model)
     conf.max_tokens = max_tokens
     conf.temperature = temperature
     conf.top_p = top_p
@@ -123,7 +146,7 @@ def main() -> None:
     parser.add_argument(
         "--provider",
         default="openai",
-        choices=["openai", "gigachat", "ollama"],
+        choices=KNOWN_LLM_PROVIDERS,
         help="LLM provider config to use.",
     )
     parser.add_argument("--model", default=None, help="Override provider default model.")

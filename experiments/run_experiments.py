@@ -2,52 +2,20 @@
 from __future__ import annotations
 
 import argparse
-import os
 import time
 from typing import Any
 
 from sentence_transformers import SentenceTransformer
 
-from generation.llm import LLMConfig, call_llm
+from generation.llm import call_llm
 from generation.prompt import SourceChunk, build_rag_messages
+from generation.run_rag import build_model_configs
 from ingestion.loaders import load_semantic_documents_from_faiss
 from retrieval.semantic import search_semantic
 from utils.logger import get_json_logger, log_event
 
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-small-v2"
 
-
-def _build_model_configs() -> dict[str, LLMConfig]:
-    """
-    Build provider configs from environment variables.
-
-    Notes:
-    - OpenAI/GigaChat entries assume OpenAI-compatible chat endpoints.
-    - Ollama entry assumes chat endpoint enabled by your local gateway.
-    """
-    return {
-        "openai": LLMConfig(
-            provider="openai",
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            api_base=os.getenv(
-                "OPENAI_API_BASE",
-                "https://api.openai.com/v1/chat/completions",
-            ),
-            api_key=os.getenv("OPENAI_API_KEY"),
-        ),
-        "gigachat": LLMConfig(
-            provider="gigachat",
-            model=os.getenv("GIGACHAT_MODEL", "GigaChat-Pro"),
-            api_base=os.getenv("GIGACHAT_API_BASE", "https://api.gigachat.ru/v1/chat/completions"),
-            api_key=os.getenv("GIGACHAT_API_KEY"),
-        ),
-        "ollama": LLMConfig(
-            provider="ollama",
-            model=os.getenv("OLLAMA_MODEL", "llama3.1:8b"),
-            api_base=os.getenv("OLLAMA_API_BASE", "http://localhost:11434/v1/chat/completions"),
-            api_key=os.getenv("OLLAMA_API_KEY"),
-        ),
-    }
 
 
 def _to_source_chunks(items: list[Any]) -> list[SourceChunk]:
@@ -101,7 +69,7 @@ def run_experiments(
         max_context_tokens=max_context_tokens,
     )
 
-    configs = _build_model_configs()
+    configs = build_model_configs()
     for model_key in models:
         conf = configs.get(model_key)
         if conf is None:
@@ -150,7 +118,7 @@ def main() -> None:
     parser.add_argument("--question", "-q", required=True, help="Question for the RAG system.")
     parser.add_argument(
         "--models",
-        default="openai,gigachat,ollama",
+        default="openai,gigachat,ollama,qwen",
         help="Comma-separated model keys to run: openai,gigachat,ollama",
     )
     parser.add_argument("--top-k", type=int, default=5, help="How many retrieved docs to include.")

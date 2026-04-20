@@ -151,6 +151,9 @@ def main() -> None:
     parser.add_argument("--index", default="rag_chunks")
     parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     parser.add_argument("--alpha", type=float, default=0.7, help="Hybrid semantic/BM25 mix.")
+    parser.add_argument("--rerank", action="store_true", help="Apply cross-encoder reranking.")
+    parser.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    parser.add_argument("--rerank-candidates", type=int, default=20)
     parser.add_argument("--out-json", default=None, help="Optional path to save JSON report.")
     args = parser.parse_args()
 
@@ -169,10 +172,34 @@ def main() -> None:
         embedding_model=args.embedding_model,
         alpha=args.alpha,
     )
+    doc_text_map = {
+        item["id"]: item["text"] for item in load_bm25_documents_from_dataset(args.rag_dataset)
+    }
+    reranker = None
+    if args.rerank:
+        from reranking.cross_encoder import CrossEncoderReranker
+
+        reranker = CrossEncoderReranker(model_name=args.reranker_model)
     query_runs: list[QueryRun] = []
     metric_inputs: list[RetrievalResult] = []
     for sample in samples:
-        retrieved = retriever.search(sample.query, top_k=max_k)
+        retrieve_k = max(max_k, args.rerank_candidates) if args.rerank else max_k
+        retrieved = retriever.search(sample.query, top_k=retrieve_k)
+        if reranker is not None:
+            from reranking.cross_encoder import RerankCandidate
+
+            rerank_input = [
+                RerankCandidate(
+                    doc_id=doc_id,
+                    text=doc_text_map.get(doc_id, ""),
+                )
+                for doc_id in retrieved
+                if doc_text_map.get(doc_id, "")
+            ]
+            reranked = reranker.rerank(sample.query, rerank_input, top_k=max_k)
+            retrieved = [item.doc_id for item in reranked]
+        else:
+            retrieved = retrieved[:max_k]
         query_runs.append(
             QueryRun(query=sample.query, relevant_doc_ids=sample.relevant_docs, retrieved_doc_ids=retrieved)
         )
@@ -188,6 +215,8 @@ def main() -> None:
     report = {
         "dataset": args.dataset,
         "retriever": args.retriever,
+        "rerank_enabled": args.rerank,
+        "reranker_model": args.reranker_model if args.rerank else None,
         "k_values": k_values,
         "samples_total": len(samples),
         "samples_with_ground_truth": sum(1 for s in samples if s.relevant_docs),

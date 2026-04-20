@@ -76,6 +76,9 @@ def run_rag(
     max_tokens: int,
     temperature: float,
     top_p: float,
+    rerank: bool = False,
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    rerank_candidates: int = 20,
 ) -> None:
     semantic_docs = load_semantic_documents_from_faiss(
         persist_directory=faiss_path,
@@ -94,7 +97,27 @@ def run_rag(
         show_progress_bar=False,
     )[0].tolist()
 
-    hits = search_semantic(query_embedding, semantic_docs, top_k=max(top_k * 2, 10))
+    candidate_k = max(top_k * 2, 10)
+    if rerank:
+        candidate_k = max(candidate_k, rerank_candidates)
+    hits = search_semantic(query_embedding, semantic_docs, top_k=candidate_k)
+    if rerank:
+        from reranking.cross_encoder import CrossEncoderReranker, RerankCandidate
+
+        reranker = CrossEncoderReranker(model_name=reranker_model)
+        hits = reranker.rerank(
+            query=question,
+            candidates=[
+                RerankCandidate(
+                    doc_id=item.doc_id,
+                    text=item.text,
+                    score=item.score,
+                    metadata=item.metadata,
+                )
+                for item in hits
+            ],
+            top_k=top_k,
+        )
     chunks = [
         SourceChunk(
             doc_id=item.doc_id,
@@ -159,6 +182,9 @@ def main() -> None:
     parser.add_argument("--max-tokens", type=int, default=512)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--top-p", type=float, default=0.95)
+    parser.add_argument("--rerank", action="store_true", help="Apply cross-encoder reranking.")
+    parser.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    parser.add_argument("--rerank-candidates", type=int, default=20)
     args = parser.parse_args()
 
     run_rag(
@@ -174,6 +200,9 @@ def main() -> None:
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         top_p=args.top_p,
+        rerank=args.rerank,
+        reranker_model=args.reranker_model,
+        rerank_candidates=args.rerank_candidates,
     )
 
 

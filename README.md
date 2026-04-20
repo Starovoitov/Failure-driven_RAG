@@ -22,6 +22,10 @@ Available commands:
 - `run_rag` - run full RAG query against selected LLM provider
 - `cleanup_faiss` - remove FAISS index (optionally remove full FAISS directory)
 
+Reranking support:
+- `reranking/cross_encoder.py` provides `CrossEncoderReranker`
+- available in `demo_retrieval`, `evaluation_runner`, and `run_rag` via `--rerank`
+
 ## Install
 
 ```bash
@@ -65,16 +69,34 @@ python -c "from embeddings.embedder import prepare_embedding_input, build_faiss_
 python main.py demo_retrieval --query "what is rag" --top-k 5
 ```
 
+With cross-encoder reranking:
+
+```bash
+python main.py demo_retrieval --query "what is rag" --top-k 5 --rerank --reranker-model cross-encoder/ms-marco-MiniLM-L-6-v2 --rerank-candidates 20
+```
+
 ### 4) Retrieval evaluation
 
 ```bash
 python main.py evaluation_runner --dataset data/evaluation_with_evidence.jsonl --retriever hybrid --k-values 1,3,5 --out-json data/retrieval_report.json
 ```
 
+With cross-encoder reranking:
+
+```bash
+python main.py evaluation_runner --dataset data/evaluation_with_evidence.jsonl --retriever hybrid --k-values 1,3,5 --rerank --reranker-model cross-encoder/ms-marco-MiniLM-L-6-v2 --rerank-candidates 20 --out-json data/retrieval_report.json
+```
+
 ### 5) Run end-to-end RAG
 
 ```bash
 python main.py run_rag --question "What is RAG?" --provider openai
+```
+
+With cross-encoder reranking:
+
+```bash
+python main.py run_rag --question "What is RAG?" --provider openai --rerank --reranker-model cross-encoder/ms-marco-MiniLM-L-6-v2 --rerank-candidates 20
 ```
 
 ### 6) Cleanup FAISS

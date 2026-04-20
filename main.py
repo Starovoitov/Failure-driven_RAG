@@ -27,6 +27,9 @@ def cmd_demo_retrieval(args: argparse.Namespace) -> None:
         dataset_path=args.dataset,
         faiss_path=args.faiss_path,
         index_name=args.index,
+        rerank=args.rerank,
+        reranker_model=args.reranker_model,
+        rerank_candidates=args.rerank_candidates,
     )
 
 
@@ -36,6 +39,7 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
     from evaluation.dataset import load_eval_samples
     from evaluation.metrics import RetrievalResult, evaluate_retrieval
     from evaluation.runner import QueryRun, build_retriever, parse_k_values
+    from ingestion.loaders import load_bm25_documents_from_dataset
 
     samples = load_eval_samples(Path(args.dataset))
     if not samples:
@@ -51,11 +55,35 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
         embedding_model=args.embedding_model,
         alpha=args.alpha,
     )
+    doc_text_map = {
+        item["id"]: item["text"] for item in load_bm25_documents_from_dataset(args.rag_dataset)
+    }
+    reranker = None
+    if args.rerank:
+        from reranking.cross_encoder import CrossEncoderReranker
+
+        reranker = CrossEncoderReranker(model_name=args.reranker_model)
 
     query_runs: list[QueryRun] = []
     metric_inputs: list[RetrievalResult] = []
     for sample in samples:
-        retrieved = retriever.search(sample.query, top_k=max_k)
+        retrieve_k = max(max_k, args.rerank_candidates) if args.rerank else max_k
+        retrieved = retriever.search(sample.query, top_k=retrieve_k)
+        if reranker is not None:
+            from reranking.cross_encoder import RerankCandidate
+
+            rerank_input = [
+                RerankCandidate(
+                    doc_id=doc_id,
+                    text=doc_text_map.get(doc_id, ""),
+                )
+                for doc_id in retrieved
+                if doc_text_map.get(doc_id, "")
+            ]
+            reranked = reranker.rerank(sample.query, rerank_input, top_k=max_k)
+            retrieved = [item.doc_id for item in reranked]
+        else:
+            retrieved = retrieved[:max_k]
         query_runs.append(
             QueryRun(query=sample.query, relevant_doc_ids=sample.relevant_docs, retrieved_doc_ids=retrieved)
         )
@@ -71,6 +99,8 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
     report = {
         "dataset": args.dataset,
         "retriever": args.retriever,
+        "rerank_enabled": args.rerank,
+        "reranker_model": args.reranker_model if args.rerank else None,
         "k_values": k_values,
         "samples_total": len(samples),
         "samples_with_ground_truth": sum(1 for s in samples if s.relevant_docs),
@@ -108,6 +138,9 @@ def cmd_run_rag(args: argparse.Namespace) -> None:
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         top_p=args.top_p,
+        rerank=args.rerank,
+        reranker_model=args.reranker_model,
+        rerank_candidates=args.rerank_candidates,
     )
 
 
@@ -143,6 +176,9 @@ def build_parser() -> argparse.ArgumentParser:
     demo_cmd.add_argument("--dataset", default="data/rag_dataset.jsonl")
     demo_cmd.add_argument("--faiss-path", default="data/faiss")
     demo_cmd.add_argument("--index", default="rag_chunks")
+    demo_cmd.add_argument("--rerank", action="store_true")
+    demo_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    demo_cmd.add_argument("--rerank-candidates", type=int, default=20)
     demo_cmd.set_defaults(handler=cmd_demo_retrieval)
 
     eval_cmd = subparsers.add_parser("evaluation_runner", help="Run retrieval benchmark over eval dataset.")
@@ -154,6 +190,9 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument("--index", default="rag_chunks")
     eval_cmd.add_argument("--embedding-model", default="intfloat/e5-small-v2")
     eval_cmd.add_argument("--alpha", type=float, default=0.7)
+    eval_cmd.add_argument("--rerank", action="store_true")
+    eval_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    eval_cmd.add_argument("--rerank-candidates", type=int, default=20)
     eval_cmd.add_argument("--out-json", default=None)
     eval_cmd.set_defaults(handler=cmd_evaluation_runner)
 
@@ -170,6 +209,9 @@ def build_parser() -> argparse.ArgumentParser:
     rag_cmd.add_argument("--max-tokens", type=int, default=512)
     rag_cmd.add_argument("--temperature", type=float, default=0.1)
     rag_cmd.add_argument("--top-p", type=float, default=0.95)
+    rag_cmd.add_argument("--rerank", action="store_true")
+    rag_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    rag_cmd.add_argument("--rerank-candidates", type=int, default=20)
     rag_cmd.set_defaults(handler=cmd_run_rag)
 
     clean_cmd = subparsers.add_parser("cleanup_faiss", help="Delete FAISS index and optionally full directory.")

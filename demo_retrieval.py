@@ -32,6 +32,9 @@ def run_demo(
     dataset_path: str,
     faiss_path: str,
     index_name: str,
+    rerank: bool = False,
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    rerank_candidates: int = 20,
 ) -> None:
     dataset_docs = load_bm25_documents_from_dataset(dataset_path=dataset_path)
     if not dataset_docs:
@@ -63,9 +66,28 @@ def run_demo(
             f"No embeddings found in FAISS index '{index_name}' at {faiss_path}. "
             "Run parser + embedding ingestion first."
         )
-    semantic_results = search_semantic(query_vec, semantic_docs, top_k=top_k)
+    candidate_k = max(top_k, rerank_candidates) if rerank else top_k
+    semantic_results = search_semantic(query_vec, semantic_docs, top_k=candidate_k)
 
-    hybrid_results = hybrid_search(semantic_results, bm25_results, alpha=0.7, top_k=top_k)
+    hybrid_results = hybrid_search(semantic_results, bm25_results, alpha=0.7, top_k=candidate_k)
+    reranked_results = []
+    if rerank:
+        from reranking.cross_encoder import CrossEncoderReranker, RerankCandidate
+
+        reranker = CrossEncoderReranker(model_name=reranker_model)
+        reranked_results = reranker.rerank(
+            query=query,
+            candidates=[
+                RerankCandidate(
+                    doc_id=item.doc_id,
+                    text=item.text,
+                    score=item.score,
+                    metadata=item.metadata,
+                )
+                for item in hybrid_results
+            ],
+            top_k=top_k,
+        )
 
     def print_block(title: str, rows: list) -> None:
         print(f"\n--- {title} ---")
@@ -83,9 +105,11 @@ def run_demo(
                 print(f"  id={r.doc_id}  score={r.score:.4f}")
             print(f"       {text_preview}")
 
-    print_block("BM25 (lexical)", bm25_results)
-    print_block("Semantic (cosine)", semantic_results)
-    print_block("Hybrid (0.7 * semantic + 0.3 * bm25_norm)", hybrid_results)
+    print_block("BM25 (lexical)", bm25_results[:top_k])
+    print_block("Semantic (cosine)", semantic_results[:top_k])
+    print_block("Hybrid (0.7 * semantic + 0.3 * bm25_norm)", hybrid_results[:top_k])
+    if rerank:
+        print_block("Cross-encoder reranked (over hybrid candidates)", reranked_results)
 
 
 def main() -> None:
@@ -124,6 +148,22 @@ def main() -> None:
         default="rag_chunks",
         help="FAISS index name with precomputed embeddings.",
     )
+    parser.add_argument(
+        "--rerank",
+        action="store_true",
+        help="Apply cross-encoder reranking over hybrid candidates.",
+    )
+    parser.add_argument(
+        "--reranker-model",
+        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
+        help="Cross-encoder model name used when --rerank is enabled.",
+    )
+    parser.add_argument(
+        "--rerank-candidates",
+        type=int,
+        default=20,
+        help="How many hybrid candidates to rerank before trimming to top-k.",
+    )
     args = parser.parse_args()
     run_demo(
         query=args.query,
@@ -132,6 +172,9 @@ def main() -> None:
         dataset_path=args.dataset,
         faiss_path=args.faiss_path,
         index_name=args.index,
+        rerank=args.rerank,
+        reranker_model=args.reranker_model,
+        rerank_candidates=args.rerank_candidates,
     )
 
 

@@ -440,24 +440,36 @@ def _source_miss_type(
     return "both_hit"
 
 
-def _build_reranker_training_pairs_from_failures(
+def _rank_weight(rank: int) -> float:
+    # Rank-aware contrastive weighting:
+    # - 1..5: highest pressure to fix top-rank confusions
+    # - 6..15: medium pressure
+    # - 16..50: lower pressure
+    if rank <= 5:
+        return 1.0
+    if rank <= 15:
+        return 0.7
+    return 0.4
+
+
+def _build_reranker_training_contexts_from_failures(
     *,
     failure_records: list[dict[str, object]],
     doc_text_map: dict[str, str],
     max_negative_rank: int,
-    max_negatives_per_positive: int,
+    max_negatives: int,
     ranking_cutoff_weight: float,
     true_recall_weight: float,
     default_weight: float,
 ) -> tuple[list[dict[str, object]], dict[str, int]]:
-    pairs: list[dict[str, object]] = []
+    contexts: list[dict[str, object]] = []
     stats = {
         "samples_seen": 0,
         "samples_used": 0,
-        "pairs_written": 0,
-        "pairs_ranking_cutoff_failure": 0,
-        "pairs_true_recall_failure": 0,
-        "pairs_other": 0,
+        "contexts_written": 0,
+        "contexts_ranking_cutoff_failure": 0,
+        "contexts_true_recall_failure": 0,
+        "contexts_other": 0,
         "missing_positive_text": 0,
         "missing_negative_text": 0,
     }
@@ -468,6 +480,8 @@ def _build_reranker_training_pairs_from_failures(
         source_miss_type = str(sample.get("source_miss_type", ""))
         positives = [str(doc_id) for doc_id in sample.get("relevant_doc_ids", [])]
         retrieved = [str(doc_id) for doc_id in sample.get("retrieved_top_k_doc_ids", [])]
+        retrieved_full = [str(doc_id) for doc_id in sample.get("retrieved_full_doc_ids", [])]
+        bm25_branch = [str(doc_id) for doc_id in sample.get("bm25_branch_doc_ids", [])]
         if not query or not positives or not retrieved:
             continue
         stats["samples_used"] += 1
@@ -479,45 +493,76 @@ def _build_reranker_training_pairs_from_failures(
         else:
             sample_weight = default_weight
 
-        negatives = [doc_id for doc_id in retrieved[:max_negative_rank] if doc_id not in set(positives)]
+        positive_ids: list[str] = []
         for positive_id in positives:
-            positive_text = doc_text_map.get(positive_id, "")
-            if not positive_text:
+            if positive_id not in doc_text_map:
                 stats["missing_positive_text"] += 1
                 continue
-            negatives_added = 0
-            for rank, negative_id in enumerate(negatives, start=1):
-                if negatives_added >= max_negatives_per_positive:
+            positive_ids.append(positive_id)
+
+        if bucket == "ranking_cutoff_failure":
+            negative_pool = retrieved[:max_negative_rank]
+        elif bucket == "true_recall_failure":
+            # True recall failures are mostly retrieval-side; prefer BM25 expansion as auxiliary signal.
+            negative_pool = (bm25_branch or retrieved_full or retrieved)[:max_negative_rank]
+        else:
+            negative_pool = retrieved[:max_negative_rank]
+
+        negative_ids: list[str] = []
+        negative_weights: dict[str, float] = {}
+        positive_set = set(positive_ids)
+        for rank, negative_id in enumerate(negative_pool, start=1):
+            if len(negative_ids) >= max_negatives:
+                break
+            if negative_id in positive_set:
+                continue
+            if negative_id not in doc_text_map:
+                stats["missing_negative_text"] += 1
+                continue
+            if negative_id in negative_weights:
+                continue
+            negative_ids.append(negative_id)
+            negative_weights[negative_id] = sample_weight * _rank_weight(rank)
+
+        # Source-miss signal is useful for hard-negative enrichment only.
+        if source_miss_type in {"embedding_miss", "bm25_miss"} and len(negative_ids) < max_negatives:
+            for rank, negative_id in enumerate(retrieved_full, start=len(negative_ids) + 1):
+                if len(negative_ids) >= max_negatives:
                     break
-                negative_text = doc_text_map.get(negative_id, "")
-                if not negative_text:
-                    stats["missing_negative_text"] += 1
+                if negative_id in positive_set or negative_id in negative_weights:
                     continue
-                pairs.append(
-                    {
-                        "schema_version": "reranker_pairwise_v1",
-                        "query": query,
-                        "positive": {"doc_id": positive_id, "text": positive_text},
-                        "negative": {"doc_id": negative_id, "text": negative_text, "rank": rank},
-                        "sample_weight": sample_weight,
-                        "failure_bucket": bucket,
-                        "source_miss_type": source_miss_type,
-                    }
-                )
-                negatives_added += 1
-                stats["pairs_written"] += 1
-                if bucket == "ranking_cutoff_failure":
-                    stats["pairs_ranking_cutoff_failure"] += 1
-                elif bucket == "true_recall_failure":
-                    stats["pairs_true_recall_failure"] += 1
-                else:
-                    stats["pairs_other"] += 1
-    return pairs, stats
+                if negative_id not in doc_text_map:
+                    continue
+                negative_ids.append(negative_id)
+                negative_weights[negative_id] = sample_weight * _rank_weight(rank)
+
+        if not positive_ids or not negative_ids:
+            continue
+        contexts.append(
+            {
+                "schema_version": "reranker_context_v1",
+                "query": query,
+                "positives": positive_ids,
+                "negatives": negative_ids,
+                "weights": negative_weights,
+                "failure_bucket": bucket,
+                "source_miss_type": source_miss_type,
+            }
+        )
+        stats["contexts_written"] += 1
+        if bucket == "ranking_cutoff_failure":
+            stats["contexts_ranking_cutoff_failure"] += 1
+        elif bucket == "true_recall_failure":
+            stats["contexts_true_recall_failure"] += 1
+        else:
+            stats["contexts_other"] += 1
+    return contexts, stats
 
 
-def _train_reranker_from_pairs_jsonl(
+def _train_reranker_from_contexts_jsonl(
     *,
     train_jsonl: Path,
+    doc_text_map: dict[str, str],
     model_name: str,
     out_dir: Path,
     epochs: int,
@@ -537,21 +582,34 @@ def _train_reranker_from_pairs_jsonl(
     examples: list[InputExample] = []
     for row in rows:
         query = str(row.get("query", "")).strip()
+        if row.get("schema_version") == "reranker_context_v1":
+            positives = [str(doc_id) for doc_id in row.get("positives", [])]
+            negatives = [str(doc_id) for doc_id in row.get("negatives", [])]
+            weights = row.get("weights", {}) or {}
+            for positive_id in positives:
+                positive_text = doc_text_map.get(positive_id, "").strip()
+                if not query or not positive_text:
+                    continue
+                for negative_id in negatives:
+                    negative_text = doc_text_map.get(negative_id, "").strip()
+                    if not negative_text:
+                        continue
+                    sample_weight = float(weights.get(negative_id, 1.0))
+                    repeats = max(1, int(round(sample_weight)))
+                    for _ in range(repeats):
+                        examples.append(InputExample(texts=[query, positive_text], label=1.0))
+                        examples.append(InputExample(texts=[query, negative_text], label=0.0))
+            continue
         if "positive_text" in row and "negative_text" in row:
             positive_text = str(row.get("positive_text", "")).strip()
             negative_text = str(row.get("negative_text", "")).strip()
-        else:
-            positive = row.get("positive", {})
-            negative = row.get("negative", {})
-            positive_text = str((positive or {}).get("text", "")).strip()
-            negative_text = str((negative or {}).get("text", "")).strip()
-        sample_weight = float(row.get("sample_weight", 1.0))
-        if not query or not positive_text or not negative_text:
-            continue
-        repeats = max(1, int(round(sample_weight)))
-        for _ in range(repeats):
-            examples.append(InputExample(texts=[query, positive_text], label=1.0))
-            examples.append(InputExample(texts=[query, negative_text], label=0.0))
+            sample_weight = float(row.get("sample_weight", 1.0))
+            if not query or not positive_text or not negative_text:
+                continue
+            repeats = max(1, int(round(sample_weight)))
+            for _ in range(repeats):
+                examples.append(InputExample(texts=[query, positive_text], label=1.0))
+                examples.append(InputExample(texts=[query, negative_text], label=0.0))
 
     if not examples:
         raise ValueError("No train examples built from reranker JSONL.")
@@ -829,6 +887,7 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                     "relevant_doc_ids": sample.relevant_docs,
                     "retrieved_top_k_doc_ids": retrieved_for_metrics,
                     "retrieved_full_doc_ids": retrieved,
+                    "bm25_branch_doc_ids": (bm25_branch_doc_ids or [])[: args.soft_recall_rescue_bm25_depth],
                     "source_miss_type": miss_type,
                     "reasons": reasons,
                 }
@@ -903,30 +962,31 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
     reranker_training_result: dict[str, object] | None = None
     if args.export_reranker_train_jsonl or args.train_reranker:
         out_jsonl = Path(args.export_reranker_train_jsonl or "data/reranker_train.jsonl")
-        pairs, pair_stats = _build_reranker_training_pairs_from_failures(
+        contexts, pair_stats = _build_reranker_training_contexts_from_failures(
             failure_records=failure_records,
             doc_text_map=doc_text_map,
             max_negative_rank=max(1, args.reranker_train_max_negative_rank),
-            max_negatives_per_positive=max(1, args.reranker_train_max_negatives_per_positive),
+            max_negatives=max(1, args.reranker_train_max_negatives),
             ranking_cutoff_weight=max(0.1, args.reranker_train_weight_ranking_cutoff),
             true_recall_weight=max(0.1, args.reranker_train_weight_true_recall),
             default_weight=max(0.1, args.reranker_train_weight_default),
         )
         out_jsonl.parent.mkdir(parents=True, exist_ok=True)
         with out_jsonl.open("w", encoding="utf-8") as fp:
-            for row in pairs:
+            for row in contexts:
                 fp.write(json.dumps(row, ensure_ascii=False) + "\n")
         reranker_dataset_export = {
             "path": str(out_jsonl),
-            "pairs": len(pairs),
+            "contexts": len(contexts),
             "stats": pair_stats,
-            "schema_version": "reranker_pairwise_v1",
+            "schema_version": "reranker_context_v1",
         }
         report["reranker_dataset_export"] = reranker_dataset_export
-        print(f"- reranker_dataset_export: {out_jsonl} ({len(pairs)} pairs)")
+        print(f"- reranker_dataset_export: {out_jsonl} ({len(contexts)} contexts)")
         if args.train_reranker:
-            reranker_training_result = _train_reranker_from_pairs_jsonl(
+            reranker_training_result = _train_reranker_from_contexts_jsonl(
                 train_jsonl=out_jsonl,
+                doc_text_map=doc_text_map,
                 model_name=args.train_reranker_model,
                 out_dir=Path(args.train_reranker_out_dir),
                 epochs=max(1, args.train_reranker_epochs),
@@ -1052,9 +1112,9 @@ def cmd_reranker_pipeline(args: argparse.Namespace) -> None:
         # Integrated reranker dataset + train toggles
         export_reranker_train_jsonl=args.export_reranker_train_jsonl,
         reranker_train_max_negative_rank=20,
-        reranker_train_max_negatives_per_positive=8,
+        reranker_train_max_negatives=16,
         reranker_train_weight_ranking_cutoff=2.0,
-        reranker_train_weight_true_recall=1.5,
+        reranker_train_weight_true_recall=0.3,
         reranker_train_weight_default=1.0,
         train_reranker=args.train_reranker,
         train_reranker_model=args.train_reranker_model,
@@ -1234,9 +1294,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional path to export pairwise hard-negative reranker training dataset.",
     )
     eval_cmd.add_argument("--reranker-train-max-negative-rank", type=int, default=20)
-    eval_cmd.add_argument("--reranker-train-max-negatives-per-positive", type=int, default=8)
+    eval_cmd.add_argument("--reranker-train-max-negatives", type=int, default=16)
     eval_cmd.add_argument("--reranker-train-weight-ranking-cutoff", type=float, default=2.0)
-    eval_cmd.add_argument("--reranker-train-weight-true-recall", type=float, default=1.5)
+    eval_cmd.add_argument("--reranker-train-weight-true-recall", type=float, default=0.3)
     eval_cmd.add_argument("--reranker-train-weight-default", type=float, default=1.0)
     eval_cmd.add_argument(
         "--train-reranker",

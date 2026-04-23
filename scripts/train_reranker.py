@@ -12,13 +12,52 @@ from sentence_transformers.cross_encoder.evaluation import CEBinaryClassificatio
 from torch.utils.data import DataLoader
 
 
-def load_pairwise_samples(path: Path, *, seed: int, val_ratio: float) -> tuple[list[InputExample], list[InputExample]]:
+def load_chunk_texts(rag_dataset_path: Path) -> dict[str, str]:
+    chunk_texts: dict[str, str] = {}
+    for line in rag_dataset_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if row.get("record_type") != "raw_chunk":
+            continue
+        chunk_id = str(row.get("chunk_id", "")).strip()
+        text = str(row.get("text", "")).strip()
+        if chunk_id and text:
+            chunk_texts[chunk_id] = text
+    return chunk_texts
+
+
+def load_pairwise_samples(
+    path: Path,
+    *,
+    seed: int,
+    val_ratio: float,
+    chunk_texts: dict[str, str],
+) -> tuple[list[InputExample], list[InputExample]]:
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     random.Random(seed).shuffle(rows)
 
     examples: list[InputExample] = []
     for row in rows:
         query = str(row.get("query", "")).strip()
+        if row.get("schema_version") == "reranker_context_v1":
+            positives = [str(doc_id) for doc_id in row.get("positives", [])]
+            negatives = [str(doc_id) for doc_id in row.get("negatives", [])]
+            weights = row.get("weights", {}) or {}
+            for positive_id in positives:
+                positive_text = chunk_texts.get(positive_id, "").strip()
+                if not positive_text:
+                    continue
+                for negative_id in negatives:
+                    negative_text = chunk_texts.get(negative_id, "").strip()
+                    if not negative_text:
+                        continue
+                    sample_weight = float(weights.get(negative_id, 1.0))
+                    repeats = max(1, int(round(sample_weight)))
+                    for _ in range(repeats):
+                        examples.append(InputExample(texts=[query, positive_text], label=1.0))
+                        examples.append(InputExample(texts=[query, negative_text], label=0.0))
+            continue
         if "positive_text" in row and "negative_text" in row:
             positive_text = str(row.get("positive_text", "")).strip()
             negative_text = str(row.get("negative_text", "")).strip()
@@ -45,6 +84,7 @@ def load_pairwise_samples(path: Path, *, seed: int, val_ratio: float) -> tuple[l
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fine-tune cross-encoder reranker on hard negatives.")
     parser.add_argument("--train-jsonl", type=Path, default=Path("data/reranker_train.jsonl"))
+    parser.add_argument("--rag-dataset", type=Path, default=Path("data/rag_dataset.jsonl"))
     parser.add_argument("--model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     parser.add_argument("--out-dir", type=Path, default=Path("models/reranker-failure-driven"))
     parser.add_argument("--epochs", type=int, default=2)
@@ -54,10 +94,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
+    chunk_texts = load_chunk_texts(args.rag_dataset)
     train_examples, val_examples = load_pairwise_samples(
         args.train_jsonl,
         seed=args.seed,
         val_ratio=args.val_ratio,
+        chunk_texts=chunk_texts,
     )
     if not train_examples:
         raise ValueError("No training examples loaded. Check --train-jsonl contents.")

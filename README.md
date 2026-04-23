@@ -153,6 +153,29 @@ Default outputs:
 - pairwise training data (`reranker_pairwise_v1`): `data/reranker_train.jsonl`
 - trained model (if `--train-reranker`): `models/reranker-failure-driven`
 
+Reranker dataset schema (`reranker_context_v1`):
+
+```json
+{
+  "schema_version": "reranker_context_v1",
+  "query": "How does RAG work in simple terms?",
+  "positives": ["cce893f9c187c4e4"],
+  "negatives": ["79eae0092b291ea5", "ff67889b4dab0ad5"],
+  "weights": {
+    "79eae0092b291ea5": 1.5,
+    "ff67889b4dab0ad5": 1.11
+  },
+  "failure_bucket": "true_recall_failure",
+  "source_miss_type": "both_hit"
+}
+```
+
+Field notes:
+- `positives`: ground-truth chunk ids for the query.
+- `negatives`: hard negatives from retrieved top-k (non-GT only).
+- `weights`: per-negative training weight (bucket-weighted and rank-aware).
+- `failure_bucket` / `source_miss_type`: failure diagnostics retained for analysis and reweighting.
+
 ### 7) Cleanup FAISS
 
 Delete one FAISS index:

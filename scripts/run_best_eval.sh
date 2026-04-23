@@ -67,6 +67,9 @@ python main.py evaluation_runner \
   --soft-recall-rescue \
   --soft-recall-rescue-tail-k 20 \
   --soft-recall-rescue-bm25-depth 200 \
+  --mmr-before-rerank \
+  --mmr-lambda 0.82 \
+  --mmr-k 30 \
   --reranker-model cross-encoder/ms-marco-MiniLM-L-6-v2 \
   --require-evidence \
   --two-stage-rerank \

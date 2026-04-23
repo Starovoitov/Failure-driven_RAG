@@ -343,6 +343,81 @@ def _build_stratified_rerank_pool(
     return merged
 
 
+def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
+    if len(vec_a) != len(vec_b) or not vec_a:
+        return 0.0
+    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    norm_a = sum(a * a for a in vec_a) ** 0.5
+    norm_b = sum(b * b for b in vec_b) ** 0.5
+    if norm_a <= 1e-12 or norm_b <= 1e-12:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def _mmr_select_candidates(
+    *,
+    candidate_doc_ids: list[str],
+    query_embedding: list[float],
+    doc_embeddings: dict[str, list[float]],
+    lambda_: float,
+    max_k: int,
+    diversity_threshold: float | None,
+) -> list[str]:
+    if max_k <= 0:
+        return []
+    seen: set[str] = set()
+    candidates = [doc_id for doc_id in candidate_doc_ids if doc_id not in seen and not seen.add(doc_id)]
+    if not candidates:
+        return []
+
+    # Keep candidate order for docs without embeddings.
+    candidates_with_vec = [doc_id for doc_id in candidates if doc_id in doc_embeddings]
+    candidates_without_vec = [doc_id for doc_id in candidates if doc_id not in doc_embeddings]
+    if not candidates_with_vec:
+        return candidates[:max_k]
+
+    q_scores = {
+        doc_id: _cosine_similarity(query_embedding, doc_embeddings[doc_id]) for doc_id in candidates_with_vec
+    }
+    selected: list[str] = []
+    remaining = list(candidates_with_vec)
+
+    while remaining and len(selected) < max_k:
+        best_doc_id = None
+        best_score = float("-inf")
+        for doc_id in remaining:
+            relevance = q_scores.get(doc_id, 0.0)
+            if not selected:
+                mmr_score = relevance
+                max_sim_to_selected = 0.0
+            else:
+                max_sim_to_selected = max(
+                    _cosine_similarity(doc_embeddings[doc_id], doc_embeddings[selected_doc])
+                    for selected_doc in selected
+                )
+                mmr_score = (lambda_ * relevance) - ((1.0 - lambda_) * max_sim_to_selected)
+
+            if diversity_threshold is not None and selected and max_sim_to_selected >= diversity_threshold:
+                continue
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best_doc_id = doc_id
+
+        if best_doc_id is None:
+            break
+        selected.append(best_doc_id)
+        remaining.remove(best_doc_id)
+
+    # Backfill with non-embedded docs and skipped docs to keep pool size stable.
+    if len(selected) < max_k:
+        for doc_id in candidates_without_vec + remaining:
+            if doc_id not in selected:
+                selected.append(doc_id)
+                if len(selected) >= max_k:
+                    break
+    return selected[:max_k]
+
+
 def _source_miss_type(
     *,
     relevant_doc_ids: list[str],
@@ -432,6 +507,12 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
         hybrid_max_per_group=args.hybrid_max_per_group,
         hybrid_rrf_k=args.hybrid_rrf_k,
     )
+    semantic_embedding_map: dict[str, list[float]] = {}
+    if args.retriever == "hybrid":
+        semantic_obj = getattr(retriever, "semantic", None)
+        documents = getattr(semantic_obj, "documents", None)
+        if documents:
+            semantic_embedding_map = {doc.doc_id: doc.embedding for doc in documents}
     doc_text_map = {
         item["id"]: item["text"] for item in load_bm25_documents_from_dataset(args.rag_dataset)
     }
@@ -452,6 +533,7 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
         bm25_branch_doc_ids: list[str] | None = None
         semantic_score_map: dict[str, float] = {}
         bm25_score_map: dict[str, float] = {}
+        query_embedding_for_mmr: list[float] | None = None
         if args.retriever == "hybrid":
             source_probe_k = max(retrieve_k, args.soft_recall_rescue_bm25_depth)
             semantic_obj = getattr(retriever, "semantic", None)
@@ -465,6 +547,7 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                     normalize_embeddings=True,
                     show_progress_bar=False,
                 )[0].tolist()
+                query_embedding_for_mmr = query_embedding
                 semantic_hits = search_semantic(query_embedding, semantic_obj.documents, top_k=source_probe_k)
                 semantic_branch_doc_ids = [item.doc_id for item in semantic_hits]
                 semantic_score_map = {item.doc_id: float(item.score) for item in semantic_hits}
@@ -493,6 +576,25 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                     retriever=retriever,
                     bm25_search_depth=args.soft_recall_rescue_bm25_depth,
                     rescue_tail_k=args.soft_recall_rescue_tail_k,
+                )
+            if (
+                args.mmr_before_rerank
+                and query_embedding_for_mmr is not None
+                and semantic_embedding_map
+                and args.retriever == "hybrid"
+            ):
+                mmr_k = args.mmr_k if args.mmr_k > 0 else retrieve_k
+                mmr_k = min(mmr_k, retrieve_k)
+                diversity_threshold = (
+                    args.mmr_diversity_threshold if args.mmr_diversity_threshold > 0 else None
+                )
+                retrieved = _mmr_select_candidates(
+                    candidate_doc_ids=retrieved,
+                    query_embedding=query_embedding_for_mmr,
+                    doc_embeddings=semantic_embedding_map,
+                    lambda_=args.mmr_lambda,
+                    max_k=mmr_k,
+                    diversity_threshold=diversity_threshold,
                 )
             from reranking.cross_encoder import RerankCandidate
 
@@ -616,6 +718,12 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
         "soft_recall_rescue_tail_k": args.soft_recall_rescue_tail_k if args.soft_recall_rescue else 0,
         "soft_recall_rescue_bm25_depth": args.soft_recall_rescue_bm25_depth if args.soft_recall_rescue else 0,
         "multi_query_enabled": args.multi_query,
+        "mmr_before_rerank": args.mmr_before_rerank,
+        "mmr_lambda": args.mmr_lambda if args.mmr_before_rerank else None,
+        "mmr_k": args.mmr_k if args.mmr_before_rerank else None,
+        "mmr_diversity_threshold": (
+            args.mmr_diversity_threshold if (args.mmr_before_rerank and args.mmr_diversity_threshold > 0) else None
+        ),
         "require_evidence": args.require_evidence,
         "k_values": k_values,
         "samples_total": len(samples),
@@ -833,6 +941,24 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=200,
         help="How deep to search BM25 before extracting BM25-only tail candidates.",
+    )
+    eval_cmd.add_argument(
+        "--mmr-before-rerank",
+        action="store_true",
+        help="Apply MMR diversity selection after fusion/rescue and before CE reranking.",
+    )
+    eval_cmd.add_argument("--mmr-lambda", type=float, default=0.75)
+    eval_cmd.add_argument(
+        "--mmr-k",
+        type=int,
+        default=40,
+        help="Candidate pool size kept after MMR (<=0 uses rerank candidate size).",
+    )
+    eval_cmd.add_argument(
+        "--mmr-diversity-threshold",
+        type=float,
+        default=0.0,
+        help="Optional hard max cosine similarity to selected docs (<=0 disables).",
     )
     eval_cmd.add_argument(
         "--require-evidence",

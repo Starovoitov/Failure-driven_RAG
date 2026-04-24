@@ -16,7 +16,7 @@ from retrieval.hybrid import hybrid_search
 from retrieval.semantic import SemanticDocument, search_semantic
 from utils.embedding_format import format_query_for_embedding
 
-DEFAULT_EMBEDDING_MODEL = "intfloat/e5-small-v2"
+DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 
 
 class Retriever(Protocol):

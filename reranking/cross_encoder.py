@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 import math
 from typing import Any
 
@@ -8,6 +9,47 @@ from sentence_transformers import CrossEncoder
 
 
 DEFAULT_CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+
+class CEScoreCalibrationMode(StrEnum):
+    MINMAX = "minmax"
+    SOFTMAX = "softmax"
+    ZSCORE = "zscore"
+
+
+def min_nax_normalize(scores: list[float]) -> list[float]:
+    min_s, max_s = min(scores), max(scores)
+    if max_s - min_s < 1e-6:
+        return [0.5] * len(scores)
+    return [(s - min_s) / (max_s - min_s) for s in scores]
+
+
+def calibrate_ce_scores(
+    scores: list[float],
+    mode: CEScoreCalibrationMode,
+    temperature: float,
+) -> list[float]:
+    t = max(temperature, 1e-6)
+    if mode == CEScoreCalibrationMode.MINMAX:
+        return min_nax_normalize(scores)
+    if mode == CEScoreCalibrationMode.SOFTMAX:
+        shifted = [score / t for score in scores]
+        max_s = max(shifted)
+        exps = [math.exp(score - max_s) for score in shifted]
+        total = sum(exps)
+        if total <= 0:
+            return [0.5] * len(scores)
+        return [value / total for value in exps]
+    if mode == CEScoreCalibrationMode.ZSCORE:
+        mean = sum(scores) / len(scores)
+        variance = sum((score - mean) ** 2 for score in scores) / len(scores)
+        std = math.sqrt(variance)
+        if std < 1e-6:
+            return [0.5] * len(scores)
+        z_scores = [(score - mean) / std for score in scores]
+        # Sigmoid to keep output in [0,1] for stable fusion.
+        return [1.0 / (1.0 + math.exp(-(z / t))) for z in z_scores]
+    raise ValueError(f"Unsupported ce_calibration: {mode}")
 
 
 @dataclass(frozen=True)
@@ -27,7 +69,10 @@ class RerankedResult:
     doc_id: str
     text: str
     score: float
+    ce_score: float
+    ce_score_norm: float
     base_score: float
+    base_score_norm: float
     metadata: dict[str, Any]
 
 
@@ -54,38 +99,9 @@ class CrossEncoderReranker:
         top_k: int = 5,
         batch_size: int = 32,
         alpha: float = 0.75,
-        ce_calibration: str = "minmax",
+        ce_calibration: CEScoreCalibrationMode | str = CEScoreCalibrationMode.MINMAX,
         ce_temperature: float = 1.0,
     ) -> list[RerankedResult]:
-        def normalize(scores: list[float]) -> list[float]:
-            min_s, max_s = min(scores), max(scores)
-            if max_s - min_s < 1e-6:
-                return [0.5] * len(scores)
-            return [(s - min_s) / (max_s - min_s) for s in scores]
-
-        def calibrate_ce_scores(scores: list[float], mode: str, temperature: float) -> list[float]:
-            t = max(temperature, 1e-6)
-            if mode == "minmax":
-                return normalize(scores)
-            if mode == "softmax":
-                shifted = [score / t for score in scores]
-                max_s = max(shifted)
-                exps = [math.exp(score - max_s) for score in shifted]
-                total = sum(exps)
-                if total <= 0:
-                    return [0.5] * len(scores)
-                return [value / total for value in exps]
-            if mode == "zscore":
-                mean = sum(scores) / len(scores)
-                variance = sum((score - mean) ** 2 for score in scores) / len(scores)
-                std = math.sqrt(variance)
-                if std < 1e-6:
-                    return [0.5] * len(scores)
-                z_scores = [(score - mean) / std for score in scores]
-                # Sigmoid to keep output in [0,1] for stable fusion.
-                return [1.0 / (1.0 + math.exp(-(z / t))) for z in z_scores]
-            raise ValueError(f"Unsupported ce_calibration: {mode}")
-
         if not candidates or top_k <= 0:
             return []
 
@@ -95,8 +111,13 @@ class CrossEncoderReranker:
 
         ce_scores = [float(score) for score in scores]
         base_scores = [float(candidate.score) for candidate in filtered_candidates]
-        ce_norm = calibrate_ce_scores(ce_scores, ce_calibration, ce_temperature)
-        base_norm = normalize(base_scores)
+        calibration_mode = (
+            ce_calibration
+            if isinstance(ce_calibration, CEScoreCalibrationMode)
+            else CEScoreCalibrationMode(ce_calibration)
+        )
+        ce_norm = calibrate_ce_scores(ce_scores, calibration_mode, ce_temperature)
+        base_norm = min_nax_normalize(base_scores)
 
         reranked = []
         for candidate, ce_score, base_score, ce_score_norm, base_score_norm in zip(
@@ -113,7 +134,10 @@ class CrossEncoderReranker:
                     doc_id=candidate.doc_id,
                     text=candidate.text,
                     score=combined,
+                    ce_score=ce_score,
+                    ce_score_norm=ce_score_norm,
                     base_score=base_score,
+                    base_score_norm=base_score_norm,
                     metadata=dict(candidate.metadata),
                 )
             )

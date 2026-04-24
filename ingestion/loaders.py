@@ -10,6 +10,9 @@ from parser.pipeline import run_pipeline
 from retrieval.semantic import SemanticDocument
 
 
+DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
+
+
 def _read_raw_chunks(dataset_path: str) -> Iterator[dict[str, Any]]:
     """Stream raw chunk records from dataset JSONL."""
     with Path(dataset_path).open("r", encoding="utf-8") as dataset:
@@ -24,7 +27,7 @@ def run_parser_and_upsert_to_faiss(
     dataset_path: str = "data/rag_dataset.jsonl",
     persist_directory: str = "data/faiss",
     index_name: str = "rag_chunks",
-    model_name: str = "intfloat/e5-small-v2",
+    model_name: str = DEFAULT_EMBEDDING_MODEL,
     min_tokens: int = 300,
     max_tokens: int = 800,
     overlap_ratio: float = 0.15,

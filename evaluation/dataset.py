@@ -77,6 +77,9 @@ DEFAULT_STOPWORDS = frozenset(
 )
 
 
+DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
+
+
 @dataclass(frozen=True)
 class EvalBlock:
     section: str
@@ -734,7 +737,7 @@ def build_evaluation_dataset(
     lexical_min_hits: int = 2,
     max_chunk_ids: int = 2,
     semantic_fallback: bool = True,
-    semantic_model: str = "intfloat/e5-small-v2",
+    semantic_model: str = DEFAULT_EMBEDDING_MODEL,
     semantic_min_score: float = 0.56,
     max_gt_url_share: float = 0.25,
     target_multi_gt_share: float = 0.4,
@@ -785,7 +788,7 @@ def main() -> None:
     parser.add_argument("--lexical-min-hits", type=int, default=2)
     parser.add_argument("--max-chunk-ids", type=int, default=2)
     parser.add_argument("--no-semantic-fallback", action="store_true")
-    parser.add_argument("--semantic-model", default="intfloat/e5-small-v2")
+    parser.add_argument("--semantic-model", default=DEFAULT_EMBEDDING_MODEL)
     parser.add_argument("--semantic-min-score", type=float, default=0.56)
     parser.add_argument("--max-gt-url-share", type=float, default=0.25)
     parser.add_argument("--target-multi-gt-share", type=float, default=0.4)

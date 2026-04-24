@@ -5,6 +5,18 @@ Run BM25, semantic (cosine), and hybrid retrieval on a tiny sample corpus.
 Usage from project root:
   poetry run python demo_retrieval.py
   poetry run python demo_retrieval.py --query "how does caching work"
+  poetry run python demo_retrieval.py --query "how does caching work" --model intfloat/e5-base-v2
+  poetry run python demo_retrieval.py --query "how does caching work" --model intfloat/e5-base-v2 --rerank --reranker-model cross-encoder/ms-marco-MiniLM-L-6-v2
+
+Important distinction vs `main.py run_rag`:
+- This script is retrieval-only (diagnostics). It does NOT call an LLM to generate an answer.
+- Here, `--model` means sentence-transformers embedding model (e.g., intfloat/e5-base-v2).
+- In `main.py run_rag`, `--model` means LLM model (e.g., qwen-plus), and embedding model is controlled by
+  `--embedding-model`.
+
+`main.py run_rag` examples:
+  poetry run python main.py run_rag --question "how does caching work" --provider qwen --model qwen-plus --embedding-model intfloat/e5-base-v2
+  poetry run python main.py run_rag --question "how does caching work" --provider openai --model gpt-4o-mini --embedding-model intfloat/e5-base-v2
 """
 
 from __future__ import annotations
@@ -34,7 +46,7 @@ def run_demo(
     faiss_path: str,
     index_name: str,
     rerank: bool = False,
-    reranker_model: str = "BAAI/bge-reranker-large",
+    reranker_model: str = DEFAULT_MODEL,
     rerank_candidates: int = 20,
 ) -> None:
     dataset_docs = load_bm25_documents_from_dataset(dataset_path=dataset_path)

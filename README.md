@@ -193,5 +193,5 @@ python main.py cleanup_faiss --faiss-path data/faiss --drop-persist-directory
 ## Notes
 
 - If a source fails to parse, a `source_error` record is still written.
-- For semantic retrieval and RAG, `intfloat/e5-small-v2` is used by default.
+- For semantic retrieval and RAG, `intfloat/e5-base-v2` is used by default.
 - If network is restricted, model loading may require local cache/offline mode.

@@ -10,6 +10,9 @@ from embeddings.faiss_store import save_faiss_index
 from utils.embedding_format import format_passage_for_embedding
 
 
+DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
+
+
 def prepare_embedding_input(
     input_jsonl: str = "data/rag_dataset.jsonl",
     output_jsonl: str = "data/embeddings_input.jsonl",
@@ -36,7 +39,7 @@ def prepare_embedding_input(
 
 def generate_embeddings(
     input_jsonl: str = "data/embeddings_input.jsonl",
-    model_name: str = "intfloat/e5-small-v2",
+    model_name: str = DEFAULT_EMBEDDING_MODEL,
     batch_size: int = 64,
 ) -> list[dict[str, Any]]:
     """
@@ -96,7 +99,7 @@ def build_faiss_index(
     input_jsonl: str = "data/embeddings_input.jsonl",
     persist_directory: str = "data/faiss",
     index_name: str = "rag_chunks",
-    model_name: str = "intfloat/e5-small-v2",
+    model_name: str = DEFAULT_EMBEDDING_MODEL,
 ) -> int:
     """
     End-to-end helper: read JSONL, generate embeddings, and persist into FAISS.

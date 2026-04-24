@@ -12,7 +12,7 @@ from ingestion.loaders import load_semantic_documents_from_faiss
 from retrieval.semantic import search_semantic
 from utils.embedding_format import format_query_for_embedding
 
-DEFAULT_EMBEDDING_MODEL = "intfloat/e5-small-v2"
+DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 
 KNOWN_LLM_PROVIDERS: tuple[str, ...] = ("openai", "gigachat", "ollama", "qwen")
 

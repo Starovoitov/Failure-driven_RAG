@@ -15,6 +15,9 @@ if TYPE_CHECKING:
     from reranking.cross_encoder import RerankCandidate
 
 
+DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
+
+
 def _dedupe_query_variants(variants: list[str]) -> list[str]:
     deduped: list[str] = []
     seen_keys: set[str] = set()
@@ -1427,13 +1430,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Skip near-duplicate chunks from the same URL when similarity >= threshold (0 disables).",
     )
-    build_parser_cmd.add_argument("--embedding-model", default="intfloat/e5-small-v2")
+    build_parser_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     build_parser_cmd.set_defaults(handler=cmd_build_parser)
 
     demo_cmd = subparsers.add_parser("demo_retrieval", help="Run BM25/semantic/hybrid retrieval demo.")
     demo_cmd.add_argument("--query", "-q", default="database caching performance")
     demo_cmd.add_argument("--top-k", "-k", type=int, default=4)
-    demo_cmd.add_argument("--model", "-m", default="intfloat/e5-small-v2")
+    demo_cmd.add_argument("--model", "-m", default=DEFAULT_EMBEDDING_MODEL)
     demo_cmd.add_argument("--dataset", default="data/rag_dataset.jsonl")
     demo_cmd.add_argument("--faiss-path", default="data/faiss")
     demo_cmd.add_argument("--index", default="rag_chunks")
@@ -1449,7 +1452,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
     eval_cmd.add_argument("--faiss-path", default="data/faiss")
     eval_cmd.add_argument("--index", default="rag_chunks")
-    eval_cmd.add_argument("--embedding-model", default="intfloat/e5-small-v2")
+    eval_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     eval_cmd.add_argument("--alpha", type=float, default=0.7)
     eval_cmd.add_argument(
         "--hybrid-candidate-multiplier",
@@ -1644,7 +1647,7 @@ def build_parser() -> argparse.ArgumentParser:
     rag_cmd.add_argument("--max-context-tokens", type=int, default=2500)
     rag_cmd.add_argument("--faiss-path", default="data/faiss")
     rag_cmd.add_argument("--index", default="rag_chunks")
-    rag_cmd.add_argument("--embedding-model", default="intfloat/e5-small-v2")
+    rag_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     rag_cmd.add_argument("--stream", action="store_true")
     rag_cmd.add_argument("--max-tokens", type=int, default=512)
     rag_cmd.add_argument("--temperature", type=float, default=0.1)

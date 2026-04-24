@@ -14,7 +14,7 @@ from ingestion.loaders import load_semantic_documents_from_faiss
 from retrieval.semantic import search_semantic
 from utils.logger import get_json_logger, log_event
 
-DEFAULT_EMBEDDING_MODEL = "intfloat/e5-small-v2"
+DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 
 
 

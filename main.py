@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 from collections import Counter
 from difflib import SequenceMatcher
@@ -14,100 +15,311 @@ if TYPE_CHECKING:
     from reranking.cross_encoder import RerankCandidate
 
 
-def _build_query_variants(query: str, max_variants: int) -> list[str]:
-    base = query.strip()
-    if not base or max_variants <= 1:
-        return [base] if base else []
-
-    lowered = base.lower()
-    variants: list[str] = [base]
-
-    # Asymmetric concept expansion:
-    # Expand a user query into adjacent retrieval concepts rather than rewrites.
-    concept_expansions = (
-        (
-            ("evaluation", "metrics", "measure", "benchmark"),
-            (
-                "faithfulness",
-                "groundedness",
-                "answer relevance",
-                "retrieval quality metrics",
-                "hallucination detection in rag",
-            ),
-        ),
-        (
-            ("hallucination", "factuality"),
-            (
-                "faithfulness metric",
-                "grounded answer verification",
-                "citation support checks",
-                "factual consistency evaluation",
-            ),
-        ),
-        (
-            ("retrieval", "recall", "search"),
-            (
-                "recall at k and hit rate",
-                "bm25 semantic hybrid retrieval",
-                "hard negative retrieval misses",
-            ),
-        ),
-        (
-            ("rerank", "reranker", "re-rank"),
-            (
-                "cross encoder reranking",
-                "candidate rerank stage",
-                "retrieval ranking calibration",
-            ),
-        ),
-        (
-            ("rag", "retrieval augmented generation"),
-            (
-                "retriever and generator grounding",
-                "evidence grounded answering",
-                "context relevance in rag",
-            ),
-        ),
-    )
-    for triggers, probes in concept_expansions:
-        if any(trigger in lowered for trigger in triggers):
-            for probe in probes:
-                if probe not in variants:
-                    variants.append(probe)
-                if len(variants) >= max_variants:
-                    return variants[:max_variants]
-
-    # Explicit multi-hop expansion to improve retrieval for multi-step questions.
-    if "multi-hop retrieval" in lowered or "multi hop retrieval" in lowered:
-        hop_variants = (
-            "what is multi-hop retrieval",
-            "how does retrieval augmented generation work",
-            "how do multi-step retrieval systems work",
-            "what is chained retrieval in rag",
-            "how does multi-step reasoning with retrieved evidence work",
-            "what is iterative retrieval for multi-hop questions",
-        )
-        for variant in hop_variants:
-            if variant not in variants:
-                variants.append(variant)
-            if len(variants) >= max_variants:
-                return variants[:max_variants]
-
-    # Keep one lightweight rewrite variant as a fallback.
-    if "?" in base and len(variants) < max_variants:
-        no_punct = base.replace("?", "").strip()
-        if no_punct and no_punct not in variants:
-            variants.append(no_punct)
-
+def _dedupe_query_variants(variants: list[str]) -> list[str]:
     deduped: list[str] = []
     seen_keys: set[str] = set()
     for variant in variants:
         key = variant.strip().lower().rstrip("?.!")
-        if key in seen_keys:
+        if not key or key in seen_keys:
             continue
         seen_keys.add(key)
-        deduped.append(variant)
-    return deduped[:max_variants]
+        deduped.append(variant.strip())
+    return deduped
+
+
+def _paraphrase_variants(base: str) -> list[str]:
+    lowered = base.lower()
+    variants: list[str] = []
+    if "?" in base:
+        variants.append(base.replace("?", "").strip())
+    replacements = (
+        ("rag", "retrieval augmented generation"),
+        ("retrieval augmented generation", "rag"),
+        ("reranker", "cross encoder reranker"),
+        ("reranking", "cross encoder reranking"),
+        ("hallucination", "factual consistency"),
+        ("recall", "retrieval coverage"),
+    )
+    for src, dst in replacements:
+        if src in lowered:
+            variants.append(lowered.replace(src, dst))
+    return _dedupe_query_variants(variants)
+
+
+def _decomposition_variants(base: str) -> list[str]:
+    lowered = base.lower().strip().rstrip("?")
+    variants: list[str] = []
+    if "why" in lowered and "recall" in lowered:
+        variants.extend(
+            [
+                "how does recall work in retrieval systems",
+                "what causes low recall in bm25 retrieval",
+                "what causes embedding retrieval misses",
+                "how does hybrid retrieval merge bm25 and dense results",
+            ]
+        )
+    if "hybrid" in lowered:
+        variants.append("how hybrid retrieval combines bm25 and semantic rankings")
+    if "rerank" in lowered:
+        variants.append("what features improve cross encoder reranking quality")
+    if "evaluation" in lowered or "metrics" in lowered:
+        variants.extend(
+            [
+                "how to evaluate retrieval quality in rag systems",
+                "how mrr and ndcg diagnose reranking failures",
+            ]
+        )
+    if not variants:
+        variants.extend(
+            [
+                f"what are the key components of {lowered}",
+                f"what common failure modes appear in {lowered}",
+                f"how to improve {lowered}",
+            ]
+        )
+    return _dedupe_query_variants(variants)
+
+
+def _entity_concept_variants(base: str) -> list[str]:
+    lowered = base.lower()
+    variants: list[str] = []
+    concept_map = (
+        ("evaluation", ["faithfulness", "groundedness", "answer relevance", "retrieval quality metrics"]),
+        ("metrics", ["mrr ndcg recall at k", "ranking quality diagnostics"]),
+        ("recall", ["retrieval coverage", "candidate pool expansion", "bm25 dense recall tradeoff"]),
+        ("hybrid", ["bm25 dense fusion", "rrf hybrid retrieval", "branch-specific retrieval misses"]),
+        ("rerank", ["cross encoder reranking optimization", "hard negative reranker training"]),
+        ("rag", ["retriever generator grounding", "evidence grounded answering"]),
+    )
+    for trigger, expansions in concept_map:
+        if trigger in lowered:
+            variants.extend(expansions)
+    if not variants:
+        variants.extend(["retrieval system failure analysis", "document ranking optimization"])
+    return _dedupe_query_variants(variants)
+
+
+def _parse_llm_expansion_payload(raw_text: str) -> tuple[list[str], list[str], list[str]]:
+    text = raw_text.strip()
+    if text.startswith("```"):
+        lines = [line for line in text.splitlines() if not line.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return [], [], []
+    paraphrases = [str(item).strip() for item in payload.get("paraphrases", [])]
+    decompositions = [str(item).strip() for item in payload.get("decompositions", [])]
+    concept_expansions = [str(item).strip() for item in payload.get("concept_expansions", [])]
+    return _dedupe_query_variants(paraphrases), _dedupe_query_variants(decompositions), _dedupe_query_variants(
+        concept_expansions
+    )
+
+
+def _llm_structured_query_expansion(
+    query: str,
+    *,
+    provider: str,
+    model: str,
+    api_base: str | None,
+    api_key: str | None,
+    timeout_seconds: int,
+    retries: int,
+) -> tuple[list[str], list[str], list[str]]:
+    from generation.llm import call_llm
+    from generation.run_rag import get_llm_config
+
+    conf = get_llm_config(provider=provider, model=model or None)
+    if api_base:
+        conf.api_base = api_base
+    if api_key:
+        conf.api_key = api_key
+    conf.max_tokens = 400
+    conf.temperature = 0.2
+    conf.top_p = 1.0
+    conf.timeout_seconds = max(1, timeout_seconds)
+    conf.retries = max(0, retries)
+    system_prompt = (
+        "Generate retrieval queries that maximize document coverage. "
+        "Return strict JSON only with keys: paraphrases, decompositions, concept_expansions. "
+        "Each value must be a list of strings."
+    )
+    user_prompt = (
+        "Generate retrieval queries that maximize document coverage.\n\n"
+        "Return:\n"
+        "1 paraphrases\n"
+        "3 decompositions\n"
+        "3 concept-expansion queries\n\n"
+        f"Query: {query}"
+    )
+    try:
+        response = call_llm(system_prompt=system_prompt, user_prompt=user_prompt, config=conf)
+        return _parse_llm_expansion_payload(response)
+    except Exception:
+        return [], [], []
+
+
+def _llm_structured_query_expansion_batch(
+    queries: list[str],
+    *,
+    provider: str,
+    model: str,
+    api_base: str | None,
+    api_key: str | None,
+    timeout_seconds: int,
+    retries: int,
+) -> dict[str, tuple[list[str], list[str], list[str]]]:
+    from generation.llm import call_llm
+    from generation.run_rag import get_llm_config
+
+    unique_queries = [q.strip() for q in queries if q.strip()]
+    if not unique_queries:
+        return {}
+
+    conf = get_llm_config(provider=provider, model=model or None)
+    if api_base:
+        conf.api_base = api_base
+    if api_key:
+        conf.api_key = api_key
+    conf.max_tokens = 2000
+    conf.temperature = 0.2
+    conf.top_p = 1.0
+    conf.timeout_seconds = max(1, timeout_seconds)
+    conf.retries = max(0, retries)
+
+    system_prompt = (
+        "Generate retrieval queries that maximize document coverage. "
+        "Return strict JSON only. "
+        "Top-level key: expansions, value is an array. "
+        "Each item must be {query, paraphrases, decompositions, concept_expansions}."
+    )
+    joined_queries = "\n".join(f"- {q}" for q in unique_queries)
+    user_prompt = (
+        "Generate retrieval queries that maximize document coverage.\n\n"
+        "For EACH query below return:\n"
+        "1 paraphrases\n"
+        "3 decompositions\n"
+        "3 concept-expansion queries\n\n"
+        "Queries:\n"
+        f"{joined_queries}"
+    )
+    try:
+        response = call_llm(system_prompt=system_prompt, user_prompt=user_prompt, config=conf)
+        text = response.strip()
+        if text.startswith("```"):
+            lines = [line for line in text.splitlines() if not line.strip().startswith("```")]
+            text = "\n".join(lines).strip()
+        payload = json.loads(text)
+    except Exception:
+        return {}
+
+    result: dict[str, tuple[list[str], list[str], list[str]]] = {}
+    for item in payload.get("expansions", []):
+        query = str(item.get("query", "")).strip()
+        if not query:
+            continue
+        paraphrases = _dedupe_query_variants([str(x).strip() for x in item.get("paraphrases", [])])
+        decompositions = _dedupe_query_variants([str(x).strip() for x in item.get("decompositions", [])])
+        concepts = _dedupe_query_variants([str(x).strip() for x in item.get("concept_expansions", [])])
+        result[query] = (paraphrases, decompositions, concepts)
+    return result
+
+
+def _build_query_variants(
+    query: str,
+    max_variants: int,
+    *,
+    use_llm_structured_expansion: bool = False,
+    llm_provider: str = "qwen",
+    llm_model: str = "qwen-plus",
+    llm_api_base: str | None = None,
+    llm_api_key: str | None = None,
+    llm_timeout_seconds: int = 8,
+    llm_retries: int = 0,
+    llm_precomputed: tuple[list[str], list[str], list[str]] | None = None,
+) -> list[str]:
+    variants, _ = _build_query_variants_with_debug(
+        query=query,
+        max_variants=max_variants,
+        use_llm_structured_expansion=use_llm_structured_expansion,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        llm_api_base=llm_api_base,
+        llm_api_key=llm_api_key,
+        llm_timeout_seconds=llm_timeout_seconds,
+        llm_retries=llm_retries,
+        llm_precomputed=llm_precomputed,
+    )
+    return variants
+
+
+def _build_query_variants_with_debug(
+    *,
+    query: str,
+    max_variants: int,
+    use_llm_structured_expansion: bool = False,
+    llm_provider: str = "qwen",
+    llm_model: str = "qwen-plus",
+    llm_api_base: str | None = None,
+    llm_api_key: str | None = None,
+    llm_timeout_seconds: int = 8,
+    llm_retries: int = 0,
+    llm_precomputed: tuple[list[str], list[str], list[str]] | None = None,
+) -> tuple[list[str], dict[str, object]]:
+    base = query.strip()
+    if not base or max_variants <= 1:
+        variants = [base] if base else []
+        return variants, {
+            "llm_requested": False,
+            "llm_generated_count": 0,
+            "llm_generated_preview": [],
+            "fallback_used": False,
+        }
+
+    paraphrase = _paraphrase_variants(base)
+    decomposition = _decomposition_variants(base)
+    entity_concepts = _entity_concept_variants(base)
+    llm_generated_preview: list[str] = []
+    llm_generated_count = 0
+    fallback_used = False
+    if use_llm_structured_expansion:
+        if llm_precomputed is not None:
+            llm_paraphrase, llm_decomposition, llm_concepts = llm_precomputed
+        else:
+            llm_paraphrase, llm_decomposition, llm_concepts = _llm_structured_query_expansion(
+                base,
+                provider=llm_provider,
+                model=llm_model,
+                api_base=llm_api_base,
+                api_key=llm_api_key,
+                timeout_seconds=llm_timeout_seconds,
+                retries=llm_retries,
+            )
+        llm_generated = _dedupe_query_variants(llm_paraphrase + llm_decomposition + llm_concepts)
+        llm_generated_preview = llm_generated[:3]
+        llm_generated_count = len(llm_generated)
+        fallback_used = llm_generated_count == 0
+        paraphrase = _dedupe_query_variants(llm_paraphrase + paraphrase)
+        decomposition = _dedupe_query_variants(llm_decomposition + decomposition)
+        entity_concepts = _dedupe_query_variants(llm_concepts + entity_concepts)
+
+    variants: list[str] = [base]
+    layer_lists = [paraphrase, decomposition, entity_concepts]
+    layer_index = 0
+    while len(variants) < max_variants and any(layer_lists):
+        layer = layer_lists[layer_index % len(layer_lists)]
+        if layer:
+            variants.append(layer.pop(0))
+        layer_index += 1
+        if layer_index > (max_variants * 6):
+            break
+    final_variants = _dedupe_query_variants(variants)[:max_variants]
+    return final_variants, {
+        "llm_requested": use_llm_structured_expansion,
+        "llm_generated_count": llm_generated_count,
+        "llm_generated_preview": llm_generated_preview,
+        "fallback_used": fallback_used,
+    }
 
 
 def _rrf_fuse_doc_ids(ranked_lists: list[list[str]], top_k: int, rrf_k: int = 60) -> list[str]:
@@ -731,9 +943,26 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
 
     query_runs: list[QueryRun] = []
     metric_inputs: list[RetrievalResult] = []
+    llm_expansion_stats = {
+        "requested_queries": 0,
+        "generated_queries": 0,
+        "fallback_queries": 0,
+    }
+    llm_expansion_examples: list[dict[str, object]] = []
     failure_records: list[dict[str, object]] = []
     miss_type_counts: Counter[str] = Counter()
     failure_bucket_source_counts: dict[str, Counter[str]] = {}
+    llm_expansion_cache: dict[str, tuple[list[str], list[str], list[str]]] = {}
+    if args.multi_query and args.multi_query_llm_expansion:
+        llm_expansion_cache = _llm_structured_query_expansion_batch(
+            [sample.query for sample in samples],
+            provider=args.multi_query_llm_provider,
+            model=args.multi_query_llm_model,
+            api_base=args.multi_query_llm_api_base,
+            api_key=args.multi_query_llm_api_key,
+            timeout_seconds=args.multi_query_llm_timeout_seconds,
+            retries=args.multi_query_llm_retries,
+        )
     for sample in samples:
         retrieve_k = max(max_k, args.rerank_candidates) if args.rerank else max_k
         semantic_branch_doc_ids: list[str] | None = None
@@ -763,7 +992,31 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                 bm25_branch_doc_ids = [item.doc_id for item in bm25_hits]
                 bm25_score_map = {item.doc_id: float(item.score) for item in bm25_hits}
         if args.multi_query:
-            query_variants = _build_query_variants(sample.query, max_variants=args.multi_query_variants)
+            query_variants, llm_debug = _build_query_variants_with_debug(
+                query=sample.query,
+                max_variants=args.multi_query_variants,
+                use_llm_structured_expansion=args.multi_query_llm_expansion,
+                llm_provider=args.multi_query_llm_provider,
+                llm_model=args.multi_query_llm_model,
+                llm_api_base=args.multi_query_llm_api_base,
+                llm_api_key=args.multi_query_llm_api_key,
+                llm_timeout_seconds=args.multi_query_llm_timeout_seconds,
+                llm_retries=args.multi_query_llm_retries,
+                llm_precomputed=llm_expansion_cache.get(sample.query),
+            )
+            if args.multi_query_llm_debug and llm_debug.get("llm_requested"):
+                llm_expansion_stats["requested_queries"] += 1
+                if int(llm_debug.get("llm_generated_count", 0)) > 0:
+                    llm_expansion_stats["generated_queries"] += 1
+                    if len(llm_expansion_examples) < 5:
+                        llm_expansion_examples.append(
+                            {
+                                "query": sample.query,
+                                "generated_preview": llm_debug.get("llm_generated_preview", []),
+                            }
+                        )
+                if bool(llm_debug.get("fallback_used", False)):
+                    llm_expansion_stats["fallback_queries"] += 1
             per_query_results = [retriever.search(query, top_k=retrieve_k) for query in query_variants if query]
             retrieved = _rrf_fuse_doc_ids(per_query_results, top_k=retrieve_k, rrf_k=args.multi_query_rrf_k)
         else:
@@ -907,6 +1160,7 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
     failure_bucket_source_counts_json = {
         bucket: dict(counter) for bucket, counter in failure_bucket_source_counts.items()
     }
+    manual_inspection_failed_queries = failure_records[: args.failure_sample_size]
     report = {
         "dataset": args.dataset,
         "retriever": args.retriever,
@@ -939,6 +1193,10 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
         "samples_filtered_out": filtered_out_samples,
         "samples_with_ground_truth": sum(1 for s in samples if s.relevant_docs),
         "metrics": metrics,
+        "evaluation": {
+            "failed_queries_for_manual_inspection": manual_inspection_failed_queries,
+            "failed_queries_for_manual_inspection_count": len(manual_inspection_failed_queries),
+        },
         "diagnostics": {
             "top1_unique_docs": len(top1_counts),
             "top1_total_queries": top1_total,
@@ -952,7 +1210,7 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                 "failure_source_miss_counts": dict(miss_type_counts),
                 "failure_bucket_source_miss_counts": failure_bucket_source_counts_json,
                 "near_miss_threshold": args.failure_near_miss_threshold,
-                "manual_inspection_samples": failure_records[: args.failure_sample_size],
+                "manual_inspection_samples": manual_inspection_failed_queries,
             },
         },
         "runs": [run.__dict__ for run in query_runs],
@@ -1024,6 +1282,16 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                 f"both_hit={per_bucket.get('both_hit', 0)}"
             )
         print(f"- failed_queries_for_manual_inspection: {min(len(failure_records), args.failure_sample_size)}")
+    if args.multi_query_llm_debug and args.multi_query_llm_expansion:
+        print(
+            "- multi_query_llm_debug: "
+            f"requested={llm_expansion_stats['requested_queries']}, "
+            f"generated={llm_expansion_stats['generated_queries']}, "
+            f"fallback={llm_expansion_stats['fallback_queries']}"
+        )
+        for item in llm_expansion_examples:
+            print(f"  - llm_example_query: {item['query']}")
+            print(f"    generated_preview: {item['generated_preview']}")
 
     if args.out_json:
         out_path = Path(args.out_json)
@@ -1098,6 +1366,14 @@ def cmd_reranker_pipeline(args: argparse.Namespace) -> None:
         multi_query=True,
         multi_query_variants=3,
         multi_query_rrf_k=60,
+        multi_query_llm_expansion=args.multi_query_llm_expansion,
+        multi_query_llm_provider=args.multi_query_llm_provider,
+        multi_query_llm_model=args.multi_query_llm_model,
+        multi_query_llm_api_base=args.multi_query_llm_api_base,
+        multi_query_llm_api_key=args.multi_query_llm_api_key,
+        multi_query_llm_timeout_seconds=args.multi_query_llm_timeout_seconds,
+        multi_query_llm_retries=args.multi_query_llm_retries,
+        multi_query_llm_debug=args.multi_query_llm_debug,
         soft_recall_rescue=True,
         soft_recall_rescue_tail_k=20,
         soft_recall_rescue_bm25_depth=200,
@@ -1237,6 +1513,18 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument("--multi-query-variants", type=int, default=3)
     eval_cmd.add_argument("--multi-query-rrf-k", type=int, default=60)
     eval_cmd.add_argument(
+        "--multi-query-llm-expansion",
+        action="store_true",
+        help="Use LLM-based structured expansion (paraphrase + decomposition + concept queries).",
+    )
+    eval_cmd.add_argument("--multi-query-llm-provider", default="qwen")
+    eval_cmd.add_argument("--multi-query-llm-model", default="qwen-plus")
+    eval_cmd.add_argument("--multi-query-llm-api-base", default=None)
+    eval_cmd.add_argument("--multi-query-llm-api-key", default=None)
+    eval_cmd.add_argument("--multi-query-llm-timeout-seconds", type=int, default=8)
+    eval_cmd.add_argument("--multi-query-llm-retries", type=int, default=0)
+    eval_cmd.add_argument("--multi-query-llm-debug", action="store_true")
+    eval_cmd.add_argument(
         "--soft-recall-rescue",
         action="store_true",
         help="Inject BM25-only tail candidates into reranker pool after hybrid retrieval.",
@@ -1324,6 +1612,14 @@ def build_parser() -> argparse.ArgumentParser:
     rerank_pipeline_cmd.add_argument("--embedding-model", default="intfloat/e5-base-v2")
     rerank_pipeline_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     rerank_pipeline_cmd.add_argument("--k-values", default="1,10,20")
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-expansion", action="store_true")
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-provider", default="qwen")
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-model", default="qwen-plus")
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-api-base", default=None)
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-api-key", default=None)
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-timeout-seconds", type=int, default=8)
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-retries", type=int, default=0)
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-debug", action="store_true")
     rerank_pipeline_cmd.add_argument("--out-json", default="data/retrieval_report_best.json")
     rerank_pipeline_cmd.add_argument(
         "--export-reranker-train-jsonl",

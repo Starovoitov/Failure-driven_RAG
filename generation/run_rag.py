@@ -17,6 +17,15 @@ DEFAULT_EMBEDDING_MODEL = "intfloat/e5-small-v2"
 KNOWN_LLM_PROVIDERS: tuple[str, ...] = ("openai", "gigachat", "ollama", "qwen")
 
 
+def _guess_embedding_models_by_dim(dim: int) -> str:
+    known_dims = {
+        384: "intfloat/e5-small-v2",
+        768: "intfloat/e5-base-v2",
+        1024: "intfloat/e5-large-v2",
+    }
+    return known_dims.get(dim, "unknown")
+
+
 def get_llm_config(provider: str, model: str | None = None) -> LLMConfig:
     """
     Single source of truth for OpenAI-compatible LLM endpoints (incl. GigaChat, Ollama gateway, Qwen).
@@ -97,6 +106,18 @@ def run_rag(
         normalize_embeddings=True,
         show_progress_bar=False,
     )[0].tolist()
+    query_dim = len(query_embedding)
+    doc_dim = len(semantic_docs[0].embedding) if semantic_docs else 0
+    if doc_dim and query_dim != doc_dim:
+        suggested_doc_model = _guess_embedding_models_by_dim(doc_dim)
+        suggested_query_model = _guess_embedding_models_by_dim(query_dim)
+        raise ValueError(
+            "Embedding dimension mismatch between query and indexed documents: "
+            f"query_dim={query_dim} (model='{embedding_model}', likely '{suggested_query_model}'), "
+            f"doc_dim={doc_dim} (likely '{suggested_doc_model}'). "
+            "Use `--embedding-model` that matches the model used during index build, "
+            "or rebuild the FAISS index with the selected embedding model."
+        )
 
     candidate_k = max(top_k * 2, 10)
     if rerank:

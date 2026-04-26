@@ -1,0 +1,572 @@
+{
+  "version": 1,
+  "blocks": [
+    {
+      "section": "Fundamentals of RAG",
+      "question": "What is RAG (Retrieval-Augmented Generation)?",
+      "answer": "RAG combines a retriever that fetches relevant external information with a generator that uses that information to produce an answer.",
+      "distractor": "RAG is just prompt engineering with a long system prompt.",
+      "noise": "Many teams call any chatbot with a search box ‘RAG,’ even if retrieval isn’t used during generation."
+    },
+    {
+      "section": "Fundamentals of RAG",
+      "question": "How does RAG work in simple terms?",
+      "answer": "A user asks a question → the system retrieves relevant documents/chunks → the model answers using those retrieved passages (often with citations).",
+      "distractor": "The model searches the web during training, then recalls it at inference.",
+      "noise": "Some pipelines retrieve first, then summarize a cached FAQ regardless of the query."
+    },
+    {
+      "section": "Fundamentals of RAG",
+      "question": "What are the main components of a RAG system?",
+      "answer": "Typically: document ingestion + chunking, embeddings, a vector index (and/or keyword index), retrieval, optional reranking, and an LLM to generate the final response.",
+      "distractor": "The only components are an LLM and a database.",
+      "noise": "People sometimes add a ‘memory’ store that mixes user notes with source docs, which can complicate evaluation."
+    },
+    {
+      "section": "Fundamentals of RAG",
+      "question": "Why use RAG instead of only an LLM?",
+      "answer": "RAG improves factual grounding, supports fresher information, enables citations, and reduces the need to bake knowledge into model weights.",
+      "distractor": "RAG guarantees zero hallucinations.",
+      "noise": "If the index is stale or the retriever is weak, RAG can perform worse than a plain LLM on common knowledge."
+    },
+    {
+      "section": "Fundamentals of RAG",
+      "question": "When is RAG most useful?",
+      "answer": "When answers must reflect a specific corpus (policies, manuals, internal docs) or must be up-to-date and auditable with sources.",
+      "distractor": "RAG is only useful for chatbots.",
+      "noise": "Even within one company, ‘the corpus’ may include conflicting versions of the same policy."
+    },
+    {
+      "section": "Retrieval & Search",
+      "question": "What is a retriever in RAG?",
+      "answer": "A retriever selects candidate passages from a knowledge base given a query, usually via vector similarity, keyword search, or both.",
+      "distractor": "The retriever is the same thing as the LLM decoder.",
+      "noise": "Some systems call an LLM-based web search tool a retriever even when results aren’t indexed."
+    },
+    {
+      "section": "Retrieval & Search",
+      "question": "What is a vector database?",
+      "answer": "A system optimized for storing embeddings and performing nearest-neighbor search to find semantically similar chunks quickly.",
+      "distractor": "A vector DB stores full documents only; embeddings are optional.",
+      "noise": "In practice, many ‘vector DBs’ are search engines with a vector plugin and extra metadata tables."
+    },
+    {
+      "section": "Retrieval & Search",
+      "question": "What are embeddings?",
+      "answer": "Numeric representations of text (or other data) that capture semantic similarity, enabling vector-based retrieval.",
+      "distractor": "Embeddings are the same as token IDs.",
+      "noise": "Embedding quality can vary drastically across domains even for the same model."
+    },
+    {
+      "section": "Retrieval & Search",
+      "question": "How do you choose an embedding model?",
+      "answer": "Match domain/language needs, evaluate retrieval metrics on a labeled set, and consider latency/cost constraints.",
+      "distractor": "Always pick the largest embedding model available.",
+      "noise": "A smaller model may win end-to-end if it improves latency enough to allow reranking."
+    },
+    {
+      "section": "Retrieval & Search",
+      "question": "What is hybrid retrieval?",
+      "answer": "Combining sparse (keyword/BM25) and dense (embedding) retrieval to improve recall and robustness.",
+      "distractor": "Hybrid retrieval just means retrieving more chunks.",
+      "noise": "If you don’t normalize scores, hybrid weighting can silently favor one method and reduce diversity."
+    },
+    {
+      "section": "Retrieval & Search",
+      "question": "What is reranking?",
+      "answer": "A second-stage model scores candidate passages more precisely and orders them to improve top-k relevance.",
+      "distractor": "Reranking is the same as summarization.",
+      "noise": "Some teams rerank with the LLM itself, which can add cost and variance."
+    },
+    {
+      "section": "Retrieval & Search",
+      "question": "How many documents/chunks should you retrieve?",
+      "answer": "Retrieve enough to cover likely evidence (often top 5–20 chunks), then cap by context budget and remove redundancy; tune empirically.",
+      "distractor": "Always retrieve exactly 3 chunks.",
+      "noise": "Different query types (definition vs troubleshooting) often need different kkk, so one setting can be misleading in eval."
+    },
+    {
+      "section": "Retrieval & Search",
+      "question": "What is query rewriting in RAG?",
+      "answer": "Reformulating the user query (often using conversation history) to improve retrieval recall/precision.",
+      "distractor": "Query rewriting changes the user’s intent on purpose.",
+      "noise": "Over-aggressive rewriting can ‘overfit’ to chat history and miss the user’s current question."
+    },
+    {
+      "section": "Generation & Grounding",
+      "question": "How does the generator use retrieved passages?",
+      "answer": "It conditions on retrieved text (and metadata) to produce an answer, ideally citing or quoting supporting spans.",
+      "distractor": "The generator copies and pastes the top chunk verbatim.",
+      "noise": "If the prompt doesn’t enforce grounding, the model may ignore retrieval entirely."
+    },
+    {
+      "section": "Generation & Grounding",
+      "question": "What is grounding?",
+      "answer": "Ensuring the answer is supported by retrieved sources, with clear attribution and minimal unsupported claims.",
+      "distractor": "Grounding means the model is trained only on your documents.",
+      "noise": "Some eval setups mistake fluent paraphrase for groundedness even when no claim is actually supported."
+    },
+    {
+      "section": "Generation & Grounding",
+      "question": "How do citations help in RAG?",
+      "answer": "They make answers auditable, improve user trust, and enable automated checks (e.g., whether a claim is supported by cited text).",
+      "distractor": "Citations guarantee the answer is correct.",
+      "noise": "Models can cite relevant-looking passages that don’t actually support the specific claim."
+    },
+    {
+      "section": "Generation & Grounding",
+      "question": "How do you prevent hallucinations in RAG?",
+      "answer": "Improve retrieval, enforce “use provided sources only,” require citations per claim, lower generation randomness, and add post-checks for support.",
+      "distractor": "Set temperature to zero and hallucinations disappear.",
+      "noise": "Some hallucinations come from misreading retrieved text rather than inventing facts."
+    },
+    {
+      "section": "Generation & Grounding",
+      "question": "What is context stuffing?",
+      "answer": "Including too many retrieved chunks, which can introduce noise and distract the model from the most relevant evidence.",
+      "distractor": "More context is always better.",
+      "noise": "Sometimes one irrelevant chunk with strong wording can bias the answer more than several relevant ones."
+    },
+    {
+      "section": "Generation & Grounding",
+      "question": "What is context compression?",
+      "answer": "Reducing retrieved content (e.g., extracting key sentences) to fit within context limits while preserving evidence needed for the answer.",
+      "distractor": "Compression is the same as indexing smaller chunks.",
+      "noise": "Compression can accidentally remove the exact sentence needed to justify a claim, hurting citation faithfulness."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "What should you evaluate in a RAG system?",
+      "answer": "Evaluate retrieval (are the right sources found?), generation (is the answer correct and readable?), and grounding (are claims supported by sources?).",
+      "distractor": "Only evaluate the final answer text; retrieval doesn’t matter.",
+      "noise": "Teams sometimes optimize for user satisfaction scores while groundedness quietly degrades."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "What are good retrieval metrics for RAG?",
+      "answer": "Common: Recall@k, Precision@k, MRR, nDCG; pick metrics aligned with whether you need broad coverage or top-1 accuracy.",
+      "distractor": "BLEU is the best retrieval metric.",
+      "noise": "High Recall@k can hide the fact that the top results are low-quality, which is what the generator mainly sees."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "What are good end-to-end metrics for RAG?",
+      "answer": "Task-specific accuracy (EM/F1 for QA), groundedness/faithfulness, citation accuracy, refusal correctness, and latency/cost.",
+      "distractor": "Perplexity alone measures RAG quality.",
+      "noise": "A model can be highly ‘faithful’ to retrieved text and still be wrong if retrieval fetched the wrong version of a policy."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "How do you evaluate groundedness?",
+      "answer": "Check whether each factual claim is supported by retrieved passages—via human review, LLM-as-judge with strict rubrics, or automated entailment/attribution checks.",
+      "distractor": "If there’s at least one citation, groundedness is perfect.",
+      "noise": "Judges often disagree on what counts as ‘supported’ unless you define claim granularity."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "How do you measure citation quality?",
+      "answer": "Measure whether cited passages actually justify the associated claims (support vs. merely related), plus coverage (are key claims cited?) and correctness of pointers.",
+      "distractor": "Citation quality equals the number of citations.",
+      "noise": "Chunk IDs can drift after re-indexing, breaking evaluation unless you version documents."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "What is a good RAG evaluation dataset?",
+      "answer": "A set of queries with expected answers and known supporting sources/spans, covering real user intents and edge cases (multi-hop, ambiguity, outdated docs).",
+      "distractor": "Any generic QA dataset works unchanged.",
+      "noise": "Synthetic questions may be too ‘clean’ and overestimate performance compared to messy real queries."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "How do you avoid data leakage in RAG evaluation?",
+      "answer": "Ensure test queries/answers aren’t in the indexed corpus in a way that makes retrieval trivial, separate training/dev/test, and version the index.",
+      "distractor": "Leakage isn’t possible because RAG uses external data.",
+      "noise": "If you generate eval questions from the same corpus, the wording can mirror chunks and inflate retrieval scores."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "How do you evaluate robustness to distractors?",
+      "answer": "Add near-relevant but incorrect passages (wrong version, similar product) and test whether retrieval and generation still select the correct evidence.",
+      "distractor": "Robustness just means using a bigger model.",
+      "noise": "A reranker can improve robustness while slightly reducing Recall@k, which can confuse metric-only comparisons."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "How do you evaluate performance under noise?",
+      "answer": "Inject OCR errors, boilerplate, duplicated content, and irrelevant chunks; measure retrieval precision, groundedness, and refusal behavior.",
+      "distractor": "Noise doesn’t matter if embeddings are good.",
+      "noise": "Some noise increases false confidence: the model produces longer answers with more unsupported details."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "How do you evaluate refusal behavior in RAG?",
+      "answer": "Include unanswerable queries or missing-evidence cases; measure whether the system refuses or asks clarifying questions instead of guessing.",
+      "distractor": "Refusals are always bad UX and should be zero.",
+      "noise": "Systems sometimes ‘refuse’ by giving a vague answer that sounds like a refusal but still asserts facts."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "What is an ablation study for RAG evaluation?",
+      "answer": "Systematically remove/alter components (no reranker, no hybrid search, different chunking) to quantify their impact on retrieval and end-to-end quality.",
+      "distractor": "Ablation means testing on fewer examples.",
+      "noise": "Ablations can be misleading if caching causes components to appear faster/better than they are."
+    },
+    {
+      "section": "Evaluation (RAG evaluation about RAG)",
+      "question": "How do you run A/B tests for RAG?",
+      "answer": "Route comparable traffic to variants, measure quality and safety/groundedness metrics, and monitor latency/cost; use guardrails for regressions.",
+      "distractor": "Pick the variant with the longest answers.",
+      "noise": "If one variant retrieves more context, it may look better in quality but worse in latency, changing user behavior and confounding results."
+    },
+    {
+      "section": "Data & Indexing",
+      "question": "What chunk size works best for indexing?",
+      "answer": "Use chunk sizes that preserve complete ideas while staying concise for retrieval and context limits; tune per corpus and task.",
+      "distractor": "Always chunk by exactly 512 tokens.",
+      "noise": "Tables and code blocks often break chunking heuristics and can dominate retrieval errors."
+    },
+    {
+      "section": "Data & Indexing",
+      "question": "How does overlap affect evaluation?",
+      "answer": "Overlap preserves continuity between neighboring chunks, but excessive overlap can create repeated evidence that should be deduplicated during evaluation.",
+      "distractor": "Overlap only increases storage, never affects metrics.",
+      "noise": "If your evaluator treats any overlapping chunk as correct, you may overestimate true retrieval diversity."
+    },
+    {
+      "section": "Data & Indexing",
+      "question": "How do you handle duplicates?",
+      "answer": "Deduplicate at ingestion and retrieval so repeated chunks do not dominate rankings or inflate apparent evidence coverage.",
+      "distractor": "Duplicates are harmless; the reranker will fix it.",
+      "noise": "Duplicates can bias the generator because repeated passages increase apparent confidence."
+    },
+    {
+      "section": "Data & Indexing",
+      "question": "What file formats are easiest to integrate into RAG?",
+      "answer": "Text-first formats are easiest: plain text, markdown, HTML, and clean PDFs usually integrate faster than heavily scanned or layout-complex files.",
+      "distractor": "Images are always the easiest format for RAG indexing.",
+      "noise": "Complex layouts like scanned tables can require OCR and extra cleanup before indexing."
+    },
+    {
+      "section": "Data & Indexing",
+      "question": "How often should you re-index your data?",
+      "answer": "Re-index whenever source data changes enough to affect answers; set cadence by freshness needs and update frequency.",
+      "distractor": "You only need to index once when the system is launched.",
+      "noise": "Over-frequent indexing can add cost, while infrequent indexing can leave answers stale."
+    },
+    {
+      "section": "Data & Indexing",
+      "question": "How do you handle duplicate content in RAG?",
+      "answer": "Handle duplicate content by removing exact and near-duplicate chunks during ingestion/retrieval to keep rankings diverse and evidence clean.",
+      "distractor": "Duplicates are harmless because embeddings always ignore repetition.",
+      "noise": "Near-duplicates can inflate retrieval metrics and bias generation toward repeated claims."
+    },
+    {
+      "section": "Data & Indexing",
+      "question": "What is the impact of noisy data?",
+      "answer": "Noisy data increases irrelevant retrieval, reduces precision, and can push weak context into generation, lowering answer reliability.",
+      "distractor": "Noise has no effect if you use a strong enough LLM.",
+      "noise": "OCR artifacts and boilerplate often look semantically similar enough to be retrieved."
+    },
+    {
+      "section": "Data & Indexing",
+      "question": "How do you maintain data quality in RAG pipelines?",
+      "answer": "Maintain quality with ingestion cleaning/validation, retrieval evaluation, and iterative review of weak sources and failure cases.",
+      "distractor": "Once indexed, data quality is fixed and does not require monitoring.",
+      "noise": "Quality drift can come from upstream source changes, not only model changes."
+    },
+    {
+      "section": "Data & Indexing",
+      "question": "Can structured and unstructured data be combined?",
+      "answer": "Yes. RAG pipelines can combine structured sources (e.g., databases) with unstructured documents and retrieve across both for grounded generation.",
+      "distractor": "Structured and unstructured data must be handled in separate systems.",
+      "noise": "Joining signals from SQL and text requires careful normalization and provenance tracking."
+    },
+    {
+      "section": "Data & Indexing",
+      "question": "What is the role of data labeling in RAG?",
+      "answer": "Data labeling supports RAG evaluation and diagnostics by categorizing query types and failure modes, and can guide reranking/evaluation improvements.",
+      "distractor": "Data labeling is only useful for supervised fine-tuning, not RAG.",
+      "noise": "Weak labels can still be useful for retrieval diagnostics when gold annotations are limited."
+    },
+    {
+      "section": "Best Practices",
+      "question": "How do you design an effective RAG pipeline?",
+      "answer": "Start from task requirements, then design ingestion, retrieval, and generation as separate measurable stages with clear quality and latency targets.",
+      "distractor": "The best RAG pipeline is always the one with the largest model.",
+      "noise": "Skipping stage-level diagnostics makes it hard to localize regressions."
+    },
+    {
+      "section": "Best Practices",
+      "question": "What are best practices for chunking documents?",
+      "answer": "Chunk by semantic boundaries, tune chunk size/overlap empirically, and preserve metadata so retrieved chunks remain interpretable.",
+      "distractor": "Use a fixed chunk size for every corpus and never revisit it.",
+      "noise": "Different document types (policies vs code vs tables) need different chunking strategies."
+    },
+    {
+      "section": "Best Practices",
+      "question": "How do you evaluate retrieval quality?",
+      "answer": "Use labeled queries and ranking metrics (e.g., Recall@k, Precision@k, MRR, nDCG), plus manual audits for difficult intents.",
+      "distractor": "If final answers look good, retrieval quality does not matter.",
+      "noise": "Good answer fluency can hide weak retrieval until edge cases are tested."
+    },
+    {
+      "section": "Best Practices",
+      "question": "What metrics are used to measure RAG performance?",
+      "answer": "Common metrics include retrieval metrics, answer correctness, groundedness/faithfulness, citation quality, refusal correctness, latency, and cost.",
+      "distractor": "Perplexity alone is enough to evaluate RAG quality.",
+      "noise": "A single aggregate metric can conceal safety and grounding regressions."
+    },
+    {
+      "section": "Best Practices",
+      "question": "How do you optimize latency in RAG systems?",
+      "answer": "Reduce retrieval and generation overhead via caching, efficient indexes, batching, smaller models where acceptable, and prompt/context optimization.",
+      "distractor": "Latency is determined only by the LLM; retrieval optimizations do not help.",
+      "noise": "Tail latency often comes from cold caches, network hops, and long contexts."
+    },
+    {
+      "section": "Best Practices",
+      "question": "What are best practices for prompt design?",
+      "answer": "Use explicit grounding instructions, output constraints, citation requirements, and fallback/refusal behavior when evidence is insufficient.",
+      "distractor": "Prompt design is irrelevant once retrieval is good.",
+      "noise": "Prompt changes can alter both faithfulness and verbosity even with the same retrieved chunks."
+    },
+    {
+      "section": "Best Practices",
+      "question": "How do you ensure consistency in outputs?",
+      "answer": "Standardize prompts and decoding settings, apply schema constraints, and evaluate variance across repeated runs and similar queries.",
+      "distractor": "Consistency is automatic when temperature is set to zero.",
+      "noise": "Retriever nondeterminism and index updates can still change outputs over time."
+    },
+    {
+      "section": "Best Practices",
+      "question": "How do you monitor and debug RAG systems?",
+      "answer": "Log retrieval candidates, prompts, outputs, citations, and scores, then trace failures by stage (ingestion/retrieval/generation).",
+      "distractor": "Debugging RAG only requires inspecting the final answer text.",
+      "noise": "Without traces, it is hard to distinguish retrieval misses from generation errors."
+    },
+    {
+      "section": "Best Practices",
+      "question": "What logging strategies are useful in RAG?",
+      "answer": "Log query, retrieved chunk IDs/scores, prompt context size, citations, latency, and outcome labels for offline analysis and alerting.",
+      "distractor": "Only log API errors; content-level logs are unnecessary.",
+      "noise": "Privacy and compliance constraints may require redaction or sampled logging."
+    },
+    {
+      "section": "Best Practices",
+      "question": "How do you test RAG systems in production?",
+      "answer": "Use canaries/A-B tests, shadow evaluations, regression suites, and guardrail alerts for grounding, safety, and latency.",
+      "distractor": "Offline tests are enough; production testing is optional.",
+      "noise": "Traffic mix shifts can break assumptions learned from offline benchmarks."
+    },
+    {
+      "section": "Optimization Techniques",
+      "question": "How can caching improve RAG performance?",
+      "answer": "Caching frequent retrieval results, embeddings, or full responses reduces repeated compute and lowers latency and cost.",
+      "distractor": "Caching hurts RAG because it always returns outdated answers.",
+      "noise": "Cache invalidation policies are needed to balance freshness and speed."
+    },
+    {
+      "section": "Optimization Techniques",
+      "question": "What is the role of reranking models?",
+      "answer": "Rerankers refine initial retrieval candidates and improve top-k relevance before generation, often boosting answer quality.",
+      "distractor": "Reranking replaces retrieval entirely.",
+      "noise": "Reranking can improve precision while adding compute overhead."
+    },
+    {
+      "section": "Optimization Techniques",
+      "question": "How can you reduce token usage in RAG?",
+      "answer": "Use tighter prompts, context compression, better chunk selection, and shorter response formats to lower prompt/output token counts.",
+      "distractor": "Token usage can only be reduced by changing the model provider.",
+      "noise": "Reducing tokens too aggressively can drop key evidence and hurt grounding."
+    },
+    {
+      "section": "Optimization Techniques",
+      "question": "How do you optimize embedding generation?",
+      "answer": "Choose efficient embedding models, batch requests, cache vectors, and process updates incrementally instead of full re-embeds.",
+      "distractor": "Embedding optimization is impossible once a model is chosen.",
+      "noise": "Hardware and batching strategy can dominate embedding throughput."
+    },
+    {
+      "section": "Optimization Techniques",
+      "question": "What are efficient indexing strategies?",
+      "answer": "Use ANN indexes, metadata filters, sharding/partitioning, and incremental updates to keep retrieval fast at scale.",
+      "distractor": "Linear scan is fine for any corpus size in production.",
+      "noise": "Index settings that maximize speed can reduce recall if poorly tuned."
+    },
+    {
+      "section": "Optimization Techniques",
+      "question": "How can batching improve performance?",
+      "answer": "Batching embeddings and retrieval operations improves throughput and amortizes network/model overhead.",
+      "distractor": "Batching only helps generation, not retrieval or embeddings.",
+      "noise": "Very large batches can increase tail latency and memory pressure."
+    },
+    {
+      "section": "Optimization Techniques",
+      "question": "What is approximate nearest neighbor (ANN) search?",
+      "answer": "ANN search returns high-quality nearest-neighbor candidates much faster than exact search, trading a small amount of recall for speed.",
+      "distractor": "ANN always returns exact nearest neighbors with no trade-offs.",
+      "noise": "ANN hyperparameters must be tuned for your accuracy-latency target."
+    },
+    {
+      "section": "Optimization Techniques",
+      "question": "How do you tune retrieval parameters?",
+      "answer": "Tune k, similarity thresholds, filters, and hybrid weights against a labeled validation set and task-specific metrics.",
+      "distractor": "Use default retrieval parameters permanently for all tasks.",
+      "noise": "Optimal settings differ across intents like definition, troubleshooting, and multi-hop."
+    },
+    {
+      "section": "Optimization Techniques",
+      "question": "What tools are commonly used to build RAG systems?",
+      "answer": "Common tools include LangChain/LlamaIndex, vector DBs (FAISS/Chroma/Pinecone/Qdrant), embedding models, and observability/eval frameworks.",
+      "distractor": "RAG requires a custom framework built from scratch.",
+      "noise": "Tool choice should follow requirements for scale, latency, and governance."
+    },
+    {
+      "section": "Optimization Techniques",
+      "question": "How do you scale RAG for large datasets?",
+      "answer": "Scale via distributed indexing, hierarchical retrieval, caching, sharding, and robust monitoring of quality-latency-cost trade-offs.",
+      "distractor": "Scaling RAG only means adding a bigger LLM.",
+      "noise": "As corpora grow, retrieval quality can degrade without better indexing and filtering."
+    },
+    {
+      "section": "Common Mistakes",
+      "question": "What are common mistakes when implementing RAG?",
+      "answer": "Frequent mistakes include weak chunking, poor retrieval tuning, stale indexes, missing evaluation, and lack of grounding guardrails.",
+      "distractor": "The main mistake is choosing a small model.",
+      "noise": "Many failures are pipeline design issues rather than model-capability limits."
+    },
+    {
+      "section": "Common Mistakes",
+      "question": "Why is poor chunking harmful?",
+      "answer": "Poor chunking breaks context or mixes unrelated facts, which reduces retrieval precision and weakens grounded generation.",
+      "distractor": "Chunking quality does not affect retrieval if embeddings are strong.",
+      "noise": "Overlapping noise can make bad chunks look deceptively relevant."
+    },
+    {
+      "section": "Common Mistakes",
+      "question": "What happens when embeddings are mismatched?",
+      "answer": "Using embeddings not suited to domain/language can hurt semantic recall and return weak evidence for generation.",
+      "distractor": "Any embedding model works equally well on every corpus.",
+      "noise": "Mismatch often appears first on specialized vocabulary and multilingual queries."
+    },
+    {
+      "section": "Common Mistakes",
+      "question": "Why is ignoring evaluation metrics a problem?",
+      "answer": "Without metrics, regressions in retrieval, grounding, safety, latency, or cost can go unnoticed until user impact is severe.",
+      "distractor": "Human spot checks alone are enough for long-term quality control.",
+      "noise": "Metric suites should include both quality and operational constraints."
+    },
+    {
+      "section": "Common Mistakes",
+      "question": "How does over-retrieval hurt performance?",
+      "answer": "Retrieving too many chunks increases noise and token cost, which can distract generation and reduce answer precision.",
+      "distractor": "More retrieved context always improves accuracy.",
+      "noise": "Over-retrieval can also increase latency and citation confusion."
+    },
+    {
+      "section": "Common Mistakes",
+      "question": "What is the risk of under-retrieval?",
+      "answer": "Under-retrieval misses key evidence, increasing incorrect or incomplete answers and unnecessary refusals.",
+      "distractor": "If top-1 is relevant, extra retrieval is never needed.",
+      "noise": "Different tasks require different evidence breadth, especially multi-hop questions."
+    },
+    {
+      "section": "Common Mistakes",
+      "question": "Why is prompt design often overlooked?",
+      "answer": "Teams focus on retrieval/model choice but neglect prompt constraints that enforce grounding, citation behavior, and refusal policy.",
+      "distractor": "Prompt wording has minimal effect compared to retrieval quality.",
+      "noise": "Prompt changes can alter reliability even when retrieval results are unchanged."
+    },
+    {
+      "section": "Common Mistakes",
+      "question": "How can bad data ruin a RAG system?",
+      "answer": "Inaccurate, duplicated, or outdated data propagates into retrieval and generation, producing confident but wrong outputs.",
+      "distractor": "Bad data is corrected automatically by the LLM during generation.",
+      "noise": "Source governance and freshness controls are as important as model tuning."
+    },
+    {
+      "section": "Common Mistakes",
+      "question": "What happens if you don’t update your index?",
+      "answer": "The system serves stale evidence, causing outdated answers and reducing trust in dynamic domains.",
+      "distractor": "Index freshness is irrelevant if the base model is recent.",
+      "noise": "Even high-quality models cannot infer organization-specific updates without fresh retrieval."
+    },
+    {
+      "section": "Common Mistakes",
+      "question": "Why is latency often underestimated?",
+      "answer": "Real latency includes retrieval, reranking, prompt assembly, generation, and infrastructure overhead, not just model inference time.",
+      "distractor": "Latency can be estimated from token generation speed alone.",
+      "noise": "Tail latency usually drives user experience and SLO breaches."
+    },
+    {
+      "section": "Advanced Topics",
+      "question": "What is multi-hop retrieval in RAG?",
+      "answer": "Multi-hop retrieval chains evidence across multiple documents/steps to answer questions that cannot be solved from one chunk alone.",
+      "distractor": "Multi-hop retrieval just means increasing top-k retrieval.",
+      "noise": "Incorrect early hops can cascade and degrade final answer quality."
+    },
+    {
+      "section": "Advanced Topics",
+      "question": "How does RAG integrate with agents?",
+      "answer": "Agents can use RAG as a tool for grounded lookups during planning/execution, combining retrieval with tool use and reasoning loops.",
+      "distractor": "Agents make RAG unnecessary because they can reason without retrieval.",
+      "noise": "Agentic workflows need guardrails to prevent uncontrolled tool/retrieval loops."
+    },
+    {
+      "section": "Advanced Topics",
+      "question": "What is retrieval-augmented reasoning?",
+      "answer": "It combines explicit retrieval with reasoning steps so the model can synthesize conclusions from cited evidence instead of guessing.",
+      "distractor": "Reasoning in RAG means the model ignores retrieved context and thinks freely.",
+      "noise": "Reasoning quality depends on evidence quality and prompt constraints."
+    },
+    {
+      "section": "Advanced Topics",
+      "question": "How can RAG be used for question answering systems?",
+      "answer": "RAG QA systems retrieve relevant passages for each question and generate answers grounded in those passages, often with citations.",
+      "distractor": "QA with RAG requires fine-tuning before any deployment.",
+      "noise": "Retrieval errors often dominate QA failures more than generation style."
+    },
+    {
+      "section": "Advanced Topics",
+      "question": "What is conversational RAG?",
+      "answer": "Conversational RAG uses dialogue history plus current query to retrieve context-aware evidence and answer consistently across turns.",
+      "distractor": "Conversational RAG is the same as storing full chat history in the prompt forever.",
+      "noise": "Long chat histories can cause retrieval drift if not summarized or rewritten."
+    },
+    {
+      "section": "Advanced Topics",
+      "question": "How do you handle multilingual RAG systems?",
+      "answer": "Use multilingual embeddings/retrievers, language-aware preprocessing, and evaluations across target languages and scripts.",
+      "distractor": "Translate everything to English and multilingual evaluation is unnecessary.",
+      "noise": "Cross-lingual retrieval can fail on domain terms and code-switching."
+    },
+    {
+      "section": "Advanced Topics",
+      "question": "Can RAG be combined with fine-tuning?",
+      "answer": "Yes—fine-tuning can improve style/task behavior while RAG provides up-to-date external knowledge and citations.",
+      "distractor": "RAG and fine-tuning are mutually exclusive approaches.",
+      "noise": "Fine-tuning stale data does not replace the need for fresh retrieval."
+    },
+    {
+      "section": "Advanced Topics",
+      "question": "What is adaptive retrieval?",
+      "answer": "Adaptive retrieval dynamically adjusts k, retriever strategy, or query rewriting based on query complexity and confidence signals.",
+      "distractor": "Adaptive retrieval means using random k values per query.",
+      "noise": "Poor confidence estimation can make adaptive policies unstable."
+    },
+    {
+      "section": "Advanced Topics",
+      "question": "How does feedback improve RAG systems?",
+      "answer": "User and evaluator feedback helps identify failure patterns, refine retrieval/prompting, and prioritize data/index improvements.",
+      "distractor": "Feedback only helps UI design, not core RAG quality.",
+      "noise": "Feedback loops need clear labeling and triage to avoid noisy optimization."
+    },
+    {
+      "section": "Advanced Topics",
+      "question": "What are future trends in RAG development?",
+      "answer": "Trends include agentic retrieval, stronger grounding/citation evaluation, multimodal and multilingual RAG, and more efficient long-context indexing.",
+      "distractor": "RAG will be replaced entirely by larger context windows.",
+      "noise": "Larger windows help but do not remove retrieval quality and governance needs."
+    }
+  ]
+}

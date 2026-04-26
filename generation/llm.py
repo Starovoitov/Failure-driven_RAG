@@ -25,7 +25,7 @@ class LLMConfig:
     temperature: float = 0.1
     top_p: float = 0.95
     enable_streaming: bool = False
-    log_path: str = "experiments/logs/llm_calls.jsonl"
+    log_path: str = "experiments/logs/llm_api_calls.jsonl"
 
 
 def _headers(config: LLMConfig) -> dict[str, str]:

@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 def cleanup_faiss_db(
-    persist_directory: str = "data/faiss",
+    persist_directory: str = "artifacts/faiss",
     index_name: str = "rag_chunks",
     drop_persist_directory: bool = False,
 ) -> dict[str, bool]:

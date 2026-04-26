@@ -1222,7 +1222,7 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
     reranker_dataset_export: dict[str, object] | None = None
     reranker_training_result: dict[str, object] | None = None
     if args.export_reranker_train_jsonl or args.train_reranker:
-        out_jsonl = Path(args.export_reranker_train_jsonl or "data/reranker_train.jsonl")
+        out_jsonl = Path(args.export_reranker_train_jsonl or "artifacts/datasets/reranker_train.jsonl")
         contexts, pair_stats = _build_reranker_training_contexts_from_failures(
             failure_records=failure_records,
             doc_text_map=doc_text_map,
@@ -1407,12 +1407,135 @@ def cmd_reranker_pipeline(args: argparse.Namespace) -> None:
     cmd_evaluation_runner(eval_args)
 
 
+def cmd_build_evaluation_dataset(args: argparse.Namespace) -> None:
+    from evaluation.dataset import build_evaluation_dataset
+
+    count, stats = build_evaluation_dataset(
+        rag_path=Path(args.rag),
+        eval_json_path=Path(args.eval),
+        out_path=Path(args.out),
+        fuzzy_ratio=args.fuzzy_ratio,
+        lexical_min_hits=args.lexical_min_hits,
+        max_chunk_ids=args.max_chunk_ids,
+        semantic_fallback=not args.no_semantic_fallback,
+        semantic_model=args.semantic_model,
+        semantic_min_score=args.semantic_min_score,
+        max_gt_url_share=args.max_gt_url_share,
+        target_multi_gt_share=args.target_multi_gt_share,
+        keep_max_ids_for_multi=args.keep_max_ids_for_multi,
+        excerpt_max=args.excerpt_max,
+    )
+    print(f"Wrote {args.out} ({count} records).")
+    print("Stats:", json.dumps(stats, indent=2))
+
+
+def cmd_dataset_audit(args: argparse.Namespace) -> None:
+    from commands.dataset_audit import audit
+
+    report = audit(Path(args.rag), Path(args.eval))
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    if args.out:
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def cmd_build_reranker_dataset(args: argparse.Namespace) -> None:
+    from commands.build_reranker_dataset import build_contexts, load_chunk_texts
+
+    report = json.loads(Path(args.eval_report).read_text(encoding="utf-8"))
+    chunk_texts = load_chunk_texts(Path(args.rag_dataset))
+    contexts, stats = build_contexts(
+        report=report,
+        chunk_texts=chunk_texts,
+        max_negative_rank=max(1, args.max_negative_rank),
+        max_negatives=max(1, args.max_negatives),
+        ranking_cutoff_weight=max(0.1, args.ranking_cutoff_weight),
+        true_recall_weight=max(0.1, args.true_recall_weight),
+        default_weight=max(0.1, args.default_weight),
+    )
+
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as fp:
+        for row in contexts:
+            fp.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    print(f"Wrote {out_path} ({len(contexts)} contexts).")
+    print("Stats:", json.dumps(stats, indent=2))
+
+
+def cmd_train_reranker(args: argparse.Namespace) -> None:
+    from commands.train_reranker import load_chunk_texts, load_pairwise_samples
+    from sentence_transformers.cross_encoder import CrossEncoder
+    from sentence_transformers.cross_encoder.evaluation import CEBinaryClassificationEvaluator
+    from torch.utils.data import DataLoader
+
+    chunk_texts = load_chunk_texts(Path(args.rag_dataset))
+    train_examples, val_examples = load_pairwise_samples(
+        Path(args.train_jsonl),
+        seed=args.seed,
+        val_ratio=args.val_ratio,
+        chunk_texts=chunk_texts,
+    )
+    if not train_examples:
+        raise ValueError("No training examples loaded. Check --train-jsonl contents.")
+
+    model = CrossEncoder(args.model, num_labels=1, max_length=512)
+    train_loader = DataLoader(train_examples, shuffle=True, batch_size=args.batch_size)
+    evaluator = None
+    if val_examples:
+        evaluator = CEBinaryClassificationEvaluator.from_input_examples(
+            val_examples,
+            name="failure-driven-val",
+        )
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    model.fit(
+        train_dataloader=train_loader,
+        evaluator=evaluator,
+        epochs=args.epochs,
+        warmup_steps=args.warmup_steps,
+        output_path=str(out_dir),
+        show_progress_bar=True,
+    )
+    model.save(str(out_dir))
+    print(
+        json.dumps(
+            {
+                "out_dir": str(out_dir),
+                "train_examples": len(train_examples),
+                "val_examples": len(val_examples),
+                "model": args.model,
+            },
+            indent=2,
+        )
+    )
+
+
+def cmd_run_experiments(args: argparse.Namespace) -> None:
+    from experiments.run_experiments import run_experiments
+
+    models = [x.strip() for x in args.models.split(",") if x.strip()]
+    run_experiments(
+        question=args.question,
+        models=models,
+        top_k=args.top_k,
+        max_context_tokens=args.max_context_tokens,
+        faiss_path=args.faiss_path,
+        index_name=args.index,
+        embedding_model=args.embedding_model,
+        log_path=args.log_path,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Single entrypoint for project workflows.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     build_parser_cmd = subparsers.add_parser(
         "build_parser",
+        aliases=["build-parser"],
         help="Run parser pipeline and build rag_dataset.jsonl",
     )
     build_parser_cmd.add_argument("--output", default="data/rag_dataset.jsonl")
@@ -1438,19 +1561,23 @@ def build_parser() -> argparse.ArgumentParser:
     demo_cmd.add_argument("--top-k", "-k", type=int, default=4)
     demo_cmd.add_argument("--model", "-m", default=DEFAULT_EMBEDDING_MODEL)
     demo_cmd.add_argument("--dataset", default="data/rag_dataset.jsonl")
-    demo_cmd.add_argument("--faiss-path", default="data/faiss")
+    demo_cmd.add_argument("--faiss-path", default="artifacts/faiss")
     demo_cmd.add_argument("--index", default="rag_chunks")
     demo_cmd.add_argument("--rerank", action="store_true")
     demo_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     demo_cmd.add_argument("--rerank-candidates", type=int, default=20)
     demo_cmd.set_defaults(handler=cmd_demo_retrieval)
 
-    eval_cmd = subparsers.add_parser("evaluation_runner", help="Run retrieval benchmark over eval dataset.")
+    eval_cmd = subparsers.add_parser(
+        "evaluation_runner",
+        aliases=["evaluate"],
+        help="Run retrieval benchmark over eval dataset.",
+    )
     eval_cmd.add_argument("--dataset", default="data/evaluation_with_evidence.jsonl")
     eval_cmd.add_argument("--retriever", choices=("semantic", "bm25", "hybrid"), default="semantic")
     eval_cmd.add_argument("--k-values", default="1,3,5")
     eval_cmd.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
-    eval_cmd.add_argument("--faiss-path", default="data/faiss")
+    eval_cmd.add_argument("--faiss-path", default="artifacts/faiss")
     eval_cmd.add_argument("--index", default="rag_chunks")
     eval_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     eval_cmd.add_argument("--alpha", type=float, default=0.7)
@@ -1595,7 +1722,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Train reranker in the same run after exporting hard-negative dataset.",
     )
     eval_cmd.add_argument("--train-reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
-    eval_cmd.add_argument("--train-reranker-out-dir", default="models/reranker-failure-driven")
+    eval_cmd.add_argument("--train-reranker-out-dir", default="artifacts/models/reranker-failure-driven")
     eval_cmd.add_argument("--train-reranker-epochs", type=int, default=2)
     eval_cmd.add_argument("--train-reranker-batch-size", type=int, default=16)
     eval_cmd.add_argument("--train-reranker-warmup-steps", type=int, default=100)
@@ -1610,7 +1737,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rerank_pipeline_cmd.add_argument("--dataset", default="data/evaluation_with_evidence.jsonl")
     rerank_pipeline_cmd.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
-    rerank_pipeline_cmd.add_argument("--faiss-path", default="data/faiss")
+    rerank_pipeline_cmd.add_argument("--faiss-path", default="artifacts/faiss")
     rerank_pipeline_cmd.add_argument("--index", default="rag_chunks")
     rerank_pipeline_cmd.add_argument("--embedding-model", default="intfloat/e5-base-v2")
     rerank_pipeline_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
@@ -1623,15 +1750,15 @@ def build_parser() -> argparse.ArgumentParser:
     rerank_pipeline_cmd.add_argument("--multi-query-llm-timeout-seconds", type=int, default=8)
     rerank_pipeline_cmd.add_argument("--multi-query-llm-retries", type=int, default=0)
     rerank_pipeline_cmd.add_argument("--multi-query-llm-debug", action="store_true")
-    rerank_pipeline_cmd.add_argument("--out-json", default="data/retrieval_report_best.json")
+    rerank_pipeline_cmd.add_argument("--out-json", default="experiments/results/retrieval_report_best.json")
     rerank_pipeline_cmd.add_argument(
         "--export-reranker-train-jsonl",
-        default="data/reranker_train.jsonl",
+        default="artifacts/datasets/reranker_train.jsonl",
         help="Path for exported reranker pairwise training dataset.",
     )
     rerank_pipeline_cmd.add_argument("--train-reranker", action="store_true")
     rerank_pipeline_cmd.add_argument("--train-reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
-    rerank_pipeline_cmd.add_argument("--train-reranker-out-dir", default="models/reranker-failure-driven")
+    rerank_pipeline_cmd.add_argument("--train-reranker-out-dir", default="artifacts/models/reranker-failure-driven")
     rerank_pipeline_cmd.add_argument("--train-reranker-epochs", type=int, default=2)
     rerank_pipeline_cmd.add_argument("--train-reranker-batch-size", type=int, default=16)
     rerank_pipeline_cmd.add_argument("--train-reranker-warmup-steps", type=int, default=100)
@@ -1639,13 +1766,17 @@ def build_parser() -> argparse.ArgumentParser:
     rerank_pipeline_cmd.add_argument("--train-reranker-seed", type=int, default=42)
     rerank_pipeline_cmd.set_defaults(handler=cmd_reranker_pipeline)
 
-    rag_cmd = subparsers.add_parser("run_rag", help="Run full RAG query against selected LLM provider.")
+    rag_cmd = subparsers.add_parser(
+        "run_rag",
+        aliases=["run-rag"],
+        help="Run full RAG query against selected LLM provider.",
+    )
     rag_cmd.add_argument("--question", "-q", required=True)
     rag_cmd.add_argument("--provider", default="openai", choices=("openai", "gigachat", "ollama", "qwen"))
     rag_cmd.add_argument("--model", default=None)
     rag_cmd.add_argument("--top-k", type=int, default=5)
     rag_cmd.add_argument("--max-context-tokens", type=int, default=2500)
-    rag_cmd.add_argument("--faiss-path", default="data/faiss")
+    rag_cmd.add_argument("--faiss-path", default="artifacts/faiss")
     rag_cmd.add_argument("--index", default="rag_chunks")
     rag_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     rag_cmd.add_argument("--stream", action="store_true")
@@ -1658,10 +1789,86 @@ def build_parser() -> argparse.ArgumentParser:
     rag_cmd.set_defaults(handler=cmd_run_rag)
 
     clean_cmd = subparsers.add_parser("cleanup_faiss", help="Delete FAISS index and optionally full directory.")
-    clean_cmd.add_argument("--faiss-path", default="data/faiss")
+    clean_cmd.add_argument("--faiss-path", default="artifacts/faiss")
     clean_cmd.add_argument("--index", default="rag_chunks")
     clean_cmd.add_argument("--drop-persist-directory", action="store_true")
     clean_cmd.set_defaults(handler=cmd_cleanup_faiss)
+
+    build_eval_cmd = subparsers.add_parser(
+        "build_evaluation_dataset",
+        aliases=["build-eval-dataset"],
+        help="Build structured evaluation JSONL from eval JSON and rag dataset.",
+    )
+    build_eval_cmd.add_argument("--rag", default="data/rag_dataset.jsonl")
+    build_eval_cmd.add_argument("--eval", default="evaluation/evaluation.json")
+    build_eval_cmd.add_argument("--out", default="data/evaluation_with_evidence.jsonl")
+    build_eval_cmd.add_argument("--fuzzy-ratio", type=float, default=0.86)
+    build_eval_cmd.add_argument("--lexical-min-hits", type=int, default=2)
+    build_eval_cmd.add_argument("--max-chunk-ids", type=int, default=2)
+    build_eval_cmd.add_argument("--no-semantic-fallback", action="store_true")
+    build_eval_cmd.add_argument("--semantic-model", default=DEFAULT_EMBEDDING_MODEL)
+    build_eval_cmd.add_argument("--semantic-min-score", type=float, default=0.56)
+    build_eval_cmd.add_argument("--max-gt-url-share", type=float, default=0.25)
+    build_eval_cmd.add_argument("--target-multi-gt-share", type=float, default=0.4)
+    build_eval_cmd.add_argument("--keep-max-ids-for-multi", type=int, default=1)
+    build_eval_cmd.add_argument("--excerpt-max", type=int, default=320)
+    build_eval_cmd.set_defaults(handler=cmd_build_evaluation_dataset)
+
+    audit_cmd = subparsers.add_parser(
+        "dataset_audit",
+        aliases=["audit-dataset"],
+        help="Audit rag/evaluation datasets and print quality report.",
+    )
+    audit_cmd.add_argument("--rag", default="data/rag_dataset.jsonl")
+    audit_cmd.add_argument("--eval", default="data/evaluation_with_evidence.jsonl")
+    audit_cmd.add_argument("--out", default=None)
+    audit_cmd.set_defaults(handler=cmd_dataset_audit)
+
+    build_reranker_ds_cmd = subparsers.add_parser(
+        "build_reranker_dataset",
+        aliases=["build-reranker-dataset"],
+        help="Build context-aware reranker training JSONL from retrieval report.",
+    )
+    build_reranker_ds_cmd.add_argument("--eval-report", default="experiments/results/retrieval_report_best.json")
+    build_reranker_ds_cmd.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
+    build_reranker_ds_cmd.add_argument("--out", default="artifacts/datasets/reranker_train.jsonl")
+    build_reranker_ds_cmd.add_argument("--max-negative-rank", type=int, default=20)
+    build_reranker_ds_cmd.add_argument("--max-negatives", type=int, default=16)
+    build_reranker_ds_cmd.add_argument("--ranking-cutoff-weight", type=float, default=2.0)
+    build_reranker_ds_cmd.add_argument("--true-recall-weight", type=float, default=0.3)
+    build_reranker_ds_cmd.add_argument("--default-weight", type=float, default=1.0)
+    build_reranker_ds_cmd.set_defaults(handler=cmd_build_reranker_dataset)
+
+    train_reranker_cmd = subparsers.add_parser(
+        "train_reranker",
+        aliases=["train-reranker"],
+        help="Fine-tune cross-encoder reranker on context dataset.",
+    )
+    train_reranker_cmd.add_argument("--train-jsonl", default="artifacts/datasets/reranker_train.jsonl")
+    train_reranker_cmd.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
+    train_reranker_cmd.add_argument("--model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    train_reranker_cmd.add_argument("--out-dir", default="artifacts/models/reranker-failure-driven")
+    train_reranker_cmd.add_argument("--epochs", type=int, default=2)
+    train_reranker_cmd.add_argument("--batch-size", type=int, default=16)
+    train_reranker_cmd.add_argument("--warmup-steps", type=int, default=100)
+    train_reranker_cmd.add_argument("--val-ratio", type=float, default=0.1)
+    train_reranker_cmd.add_argument("--seed", type=int, default=42)
+    train_reranker_cmd.set_defaults(handler=cmd_train_reranker)
+
+    experiments_cmd = subparsers.add_parser(
+        "run_experiments",
+        aliases=["run-experiments"],
+        help="Run RAG answer comparison across configured LLM providers.",
+    )
+    experiments_cmd.add_argument("--question", "-q", required=True)
+    experiments_cmd.add_argument("--models", default="openai,gigachat,ollama,qwen")
+    experiments_cmd.add_argument("--top-k", type=int, default=5)
+    experiments_cmd.add_argument("--max-context-tokens", type=int, default=2500)
+    experiments_cmd.add_argument("--faiss-path", default="artifacts/faiss")
+    experiments_cmd.add_argument("--index", default="rag_chunks")
+    experiments_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
+    experiments_cmd.add_argument("--log-path", default="experiments/logs/llm_experiment_results.jsonl")
+    experiments_cmd.set_defaults(handler=cmd_run_experiments)
 
     return parser
 

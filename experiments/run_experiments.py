@@ -128,10 +128,10 @@ def main() -> None:
         default=2500,
         help="Approx context token budget before truncation.",
     )
-    parser.add_argument("--faiss-path", default="data/faiss", help="FAISS persist directory.")
+    parser.add_argument("--faiss-path", default="artifacts/faiss", help="FAISS persist directory.")
     parser.add_argument("--index", default="rag_chunks", help="FAISS index name.")
     parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
-    parser.add_argument("--log-path", default="experiments/logs/experiment_results.jsonl")
+    parser.add_argument("--log-path", default="experiments/logs/llm_experiment_results.jsonl")
 
     args = parser.parse_args()
     models = [x.strip() for x in args.models.split(",") if x.strip()]
@@ -146,6 +146,3 @@ def main() -> None:
         log_path=args.log_path,
     )
 
-
-if __name__ == "__main__":
-    main()

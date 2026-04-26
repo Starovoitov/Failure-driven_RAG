@@ -50,6 +50,12 @@ Sources (URLs / GitHub / docs / community pages)
 -> JSONL output
 -> Optional embeddings + FAISS
 
+## Path conventions
+
+- `data/` - source inputs and core datasets (e.g. `data/rag_dataset.jsonl`, `data/evaluation_with_evidence.jsonl`)
+- `artifacts/` - generated assets used by pipelines (e.g. `artifacts/faiss`, `artifacts/datasets/reranker_train.jsonl`, `artifacts/models/reranker-failure-driven`)
+- `experiments/` - run outputs for analysis (e.g. `experiments/results/retrieval_report_best.json`, `experiments/logs/*.jsonl`)
+
 ## Common workflows
 
 ### 1) Build parser dataset
@@ -81,7 +87,7 @@ python main.py build_parser \
 ### 2) Build embeddings + FAISS
 
 ```bash
-python -c "from embeddings.embedder import prepare_embedding_input, build_faiss_index; prepare_embedding_input('data/rag_dataset.jsonl', 'data/embeddings_input.jsonl'); build_faiss_index(input_jsonl='data/embeddings_input.jsonl', persist_directory='data/faiss', index_name='rag_chunks')"
+python -c "from embeddings.embedder import prepare_embedding_input, build_faiss_index; prepare_embedding_input('data/rag_dataset.jsonl', 'data/embeddings_input.jsonl'); build_faiss_index(input_jsonl='data/embeddings_input.jsonl', persist_directory='artifacts/faiss', index_name='rag_chunks')"
 ```
 
 ### 3) Retrieval demo
@@ -101,7 +107,7 @@ python main.py demo_retrieval --query "what is rag" --top-k 5 --rerank --reranke
 Generate evaluation dataset with evidence links:
 
 ```bash
-python evaluation/dataset.py --rag data/rag_dataset.jsonl --eval data/evaluation.txt --out data/evaluation_with_evidence.jsonl --fuzzy-ratio 0.78 --lexical-min-hits 1 --max-chunk-ids 3
+python main.py build_evaluation_dataset --rag data/rag_dataset.jsonl --eval evaluation/evaluation.json --out data/evaluation_with_evidence.jsonl --fuzzy-ratio 0.78 --lexical-min-hits 1 --max-chunk-ids 3
 ```
 
 Then run retrieval benchmark:
@@ -149,9 +155,9 @@ python main.py reranker_pipeline --train-reranker
 ```
 
 Default outputs:
-- report: `data/retrieval_report_best.json`
-- pairwise training data (`reranker_pairwise_v1`): `data/reranker_train.jsonl`
-- trained model (if `--train-reranker`): `models/reranker-failure-driven`
+- report: `experiments/results/retrieval_report_best.json`
+- pairwise training data (`reranker_pairwise_v1`): `artifacts/datasets/reranker_train.jsonl`
+- trained model (if `--train-reranker`): `artifacts/models/reranker-failure-driven`
 
 Reranker dataset schema (`reranker_context_v1`):
 
@@ -181,13 +187,13 @@ Field notes:
 Delete one FAISS index:
 
 ```bash
-python main.py cleanup_faiss --faiss-path data/faiss --index rag_chunks
+python main.py cleanup_faiss --faiss-path artifacts/faiss --index rag_chunks
 ```
 
 Delete full FAISS directory:
 
 ```bash
-python main.py cleanup_faiss --faiss-path data/faiss --drop-persist-directory
+python main.py cleanup_faiss --faiss-path artifacts/faiss --drop-persist-directory
 ```
 
 ## Notes

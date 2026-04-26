@@ -197,7 +197,7 @@ def main() -> None:
     parser.add_argument("--model", default=None, help="Override provider default model.")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--max-context-tokens", type=int, default=2500)
-    parser.add_argument("--faiss-path", default="data/faiss")
+    parser.add_argument("--faiss-path", default="artifacts/faiss")
     parser.add_argument("--index", default="rag_chunks")
     parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     parser.add_argument("--stream", action="store_true", help="Stream answer tokens.")
@@ -227,6 +227,3 @@ def main() -> None:
         rerank_candidates=args.rerank_candidates,
     )
 
-
-if __name__ == "__main__":
-    main()

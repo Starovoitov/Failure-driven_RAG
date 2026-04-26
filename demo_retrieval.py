@@ -153,7 +153,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--faiss-path",
-        default="data/faiss",
+        default="artifacts/faiss",
         help="Persistent FAISS directory containing chunk embeddings.",
     )
     parser.add_argument(
@@ -190,6 +190,3 @@ def main() -> None:
         rerank_candidates=args.rerank_candidates,
     )
 
-
-if __name__ == "__main__":
-    main()

@@ -481,54 +481,35 @@ def excerpt_for_chunk(
     return snippet
 
 
-def parse_evaluation_blocks(lines: list[str]) -> list[EvalBlock]:
+def load_evaluation_blocks(eval_json_path: Path) -> list[EvalBlock]:
+    payload = json.loads(eval_json_path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict):
+        rows = payload.get("blocks", [])
+    elif isinstance(payload, list):
+        rows = payload
+    else:
+        raise ValueError(f"Unsupported evaluation JSON format in {eval_json_path}")
+
     blocks: list[EvalBlock] = []
-    section = ""
-    idx = 0
-    total = len(lines)
-
-    while idx < total:
-        line = lines[idx].strip()
-        if not line:
-            idx += 1
+    for row in rows:
+        if not isinstance(row, dict):
             continue
-        if line.startswith(("Expected Evidence:", "Excerpt:")):
-            idx += 1
+        question = str(row.get("question", "")).strip()
+        answer = str(row.get("answer", "")).strip()
+        distractor = str(row.get("distractor", "")).strip()
+        noise = str(row.get("noise", "")).strip()
+        section = str(row.get("section", "")).strip() or "Fundamentals of RAG"
+        if not question or not answer:
             continue
-
-        if line.endswith("?") and not line.startswith(("Distractor:", "Noise:")):
-            question = line
-            idx += 1
-            while idx < total and not lines[idx].strip():
-                idx += 1
-            if idx >= total:
-                break
-            answer = lines[idx].strip()
-            idx += 1
-            while idx < total and not lines[idx].strip():
-                idx += 1
-            if idx >= total:
-                break
-            distractor_line = lines[idx].strip()
-            idx += 1
-            if not distractor_line.startswith("Distractor:"):
-                raise ValueError(f"Expected Distractor after answer, got: {distractor_line[:80]!r}")
-            distractor = distractor_line.split(":", 1)[1].strip()
-            while idx < total and not lines[idx].strip():
-                idx += 1
-            if idx >= total:
-                break
-            noise_line = lines[idx].strip()
-            idx += 1
-            if not noise_line.startswith("Noise:"):
-                raise ValueError(f"Expected Noise after distractor, got: {noise_line[:80]!r}")
-            noise = noise_line.split(":", 1)[1].strip()
-            blocks.append(EvalBlock(section=section, question=question, answer=answer, distractor=distractor, noise=noise))
-            continue
-
-        section = line
-        idx += 1
-
+        blocks.append(
+            EvalBlock(
+                section=section,
+                question=question,
+                answer=answer,
+                distractor=distractor,
+                noise=noise,
+            )
+        )
     return blocks
 
 
@@ -730,7 +711,7 @@ def split_eval_samples(
 
 def build_evaluation_dataset(
     rag_path: Path,
-    eval_txt_path: Path,
+    eval_json_path: Path,
     out_path: Path,
     *,
     fuzzy_ratio: float = 0.86,
@@ -749,7 +730,7 @@ def build_evaluation_dataset(
     semantic_index = None
     if semantic_fallback:
         semantic_index = build_semantic_index(chunk_text, model_name=semantic_model)
-    blocks = parse_evaluation_blocks(eval_txt_path.read_text(encoding="utf-8").splitlines())
+    blocks = load_evaluation_blocks(eval_json_path)
     records, stats = build_jsonl_records(
         blocks,
         qa_map,
@@ -779,10 +760,10 @@ def build_evaluation_dataset(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Build structured evaluation JSONL from evaluation.txt + rag_dataset.jsonl.",
+        description="Build structured evaluation JSONL from evaluation JSON + rag_dataset.jsonl.",
     )
     parser.add_argument("--rag", type=Path, default=Path("data/rag_dataset.jsonl"))
-    parser.add_argument("--eval", type=Path, default=Path("data/evaluation.txt"))
+    parser.add_argument("--eval", type=Path, default=Path("evaluation/evaluation.json"))
     parser.add_argument("--out", type=Path, default=Path("data/evaluation_with_evidence.jsonl"))
     parser.add_argument("--fuzzy-ratio", type=float, default=0.86)
     parser.add_argument("--lexical-min-hits", type=int, default=2)
@@ -798,7 +779,7 @@ def main() -> None:
 
     count, stats = build_evaluation_dataset(
         rag_path=args.rag,
-        eval_txt_path=args.eval,
+        eval_json_path=args.eval,
         out_path=args.out,
         fuzzy_ratio=args.fuzzy_ratio,
         lexical_min_hits=args.lexical_min_hits,
@@ -814,6 +795,3 @@ def main() -> None:
     print(f"Wrote {args.out} ({count} records).")
     print("Stats:", json.dumps(stats, indent=2))
 
-
-if __name__ == "__main__":
-    main()

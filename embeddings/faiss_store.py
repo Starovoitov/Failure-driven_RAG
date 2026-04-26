@@ -22,7 +22,7 @@ def _persist_paths(persist_directory: str, index_name: str) -> Path:
 
 def save_faiss_index(
     embedding_records: list[dict[str, Any]],
-    persist_directory: str = "data/faiss",
+    persist_directory: str = "artifacts/faiss",
     index_name: str = "rag_chunks",
 ) -> int:
     """
@@ -62,7 +62,7 @@ def save_faiss_index(
 
 
 def load_semantic_documents_from_faiss(
-    persist_directory: str = "data/faiss",
+    persist_directory: str = "artifacts/faiss",
     index_name: str = "rag_chunks",
 ) -> list[SemanticDocument]:
     """Load vectors and parallel text/metadata from a persisted FAISS index."""

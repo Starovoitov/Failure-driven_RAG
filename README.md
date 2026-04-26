@@ -44,6 +44,20 @@ Reranking support:
 poetry install
 ```
 
+## Run tests
+
+Run all unit tests (unittest discovery):
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Run a single test module:
+
+```bash
+python -m unittest tests.test_utils_common -v
+```
+
 ## Architecture
 
 Sources (URLs / GitHub / docs / community pages)

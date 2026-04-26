@@ -71,8 +71,8 @@ Sources (URLs / GitHub / docs / community pages)
 
 ## Path conventions
 
-- `data/` - source inputs and core datasets (e.g. `data/rag_dataset.jsonl`, `data/evaluation_with_evidence.jsonl`)
-- `artifacts/` - generated assets used by pipelines (e.g. `artifacts/faiss`, `artifacts/datasets/reranker_train.jsonl`, `artifacts/models/reranker-failure-driven`)
+- `data/` - source inputs and core datasets (e.g. `data/rag_dataset.jsonl`, `data/evaluation_with_evidence.jsonl`, `data/faiss`)
+- `artifacts/` - generated assets used by pipelines (e.g. `artifacts/datasets/reranker_train.jsonl`, `artifacts/models/reranker-failure-driven`)
 - `experiments/` - run outputs for analysis (e.g. `experiments/results/retrieval_report_best.json`, `experiments/logs/*.jsonl`)
 - `caching/` - reusable cache implementations (currently in-memory LRU + TTL)
 
@@ -107,7 +107,7 @@ python main.py build_parser \
 ### 2) Build embeddings + FAISS
 
 ```bash
-python -c "from embeddings.embedder import prepare_embedding_input, build_faiss_index; prepare_embedding_input('data/rag_dataset.jsonl', 'data/embeddings_input.jsonl'); build_faiss_index(input_jsonl='data/embeddings_input.jsonl', persist_directory='artifacts/faiss', index_name='rag_chunks')"
+python -c "from embeddings.embedder import prepare_embedding_input, build_faiss_index; prepare_embedding_input('data/rag_dataset.jsonl', 'data/embeddings_input.jsonl'); build_faiss_index(input_jsonl='data/embeddings_input.jsonl', persist_directory='data/faiss', index_name='rag_chunks')"
 ```
 
 ### 3) Retrieval demo
@@ -252,13 +252,13 @@ Field notes:
 Delete one FAISS index:
 
 ```bash
-python main.py cleanup_faiss --faiss-path artifacts/faiss --index rag_chunks
+python main.py cleanup_faiss --faiss-path data/faiss --index rag_chunks
 ```
 
 Delete full FAISS directory:
 
 ```bash
-python main.py cleanup_faiss --faiss-path artifacts/faiss --drop-persist-directory
+python main.py cleanup_faiss --faiss-path data/faiss --drop-persist-directory
 ```
 
 ## Notes

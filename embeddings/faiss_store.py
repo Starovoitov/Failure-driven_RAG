@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -14,15 +15,41 @@ INDEX_FILENAME = "vectors.index"
 STORE_FILENAME = "store.json"
 
 
+def _maybe_migrate_legacy_index_dir(persist_directory: str, index_name: str) -> Path:
+    """
+    Move legacy root-level index folder (e.g. ./rag_chunks) into persist_directory/index_name.
+
+    Migration runs only when destination does not already exist.
+    """
+    target_root = Path(persist_directory) / index_name
+    if target_root.exists():
+        return target_root
+
+    legacy_root = Path(index_name)
+    if not legacy_root.is_dir():
+        return target_root
+
+    # Avoid pathological self-moves when paths already point to the same location.
+    try:
+        if legacy_root.resolve() == target_root.resolve():
+            return target_root
+    except FileNotFoundError:
+        return target_root
+
+    target_root.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(legacy_root), str(target_root))
+    return target_root
+
+
 def _persist_paths(persist_directory: str, index_name: str) -> Path:
-    root = Path(persist_directory) / index_name
+    root = _maybe_migrate_legacy_index_dir(persist_directory, index_name)
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
 def save_faiss_index(
     embedding_records: list[dict[str, Any]],
-    persist_directory: str = "artifacts/faiss",
+    persist_directory: str = "data/faiss",
     index_name: str = "rag_chunks",
 ) -> int:
     """
@@ -62,11 +89,11 @@ def save_faiss_index(
 
 
 def load_semantic_documents_from_faiss(
-    persist_directory: str = "artifacts/faiss",
+    persist_directory: str = "data/faiss",
     index_name: str = "rag_chunks",
 ) -> list[SemanticDocument]:
     """Load vectors and parallel text/metadata from a persisted FAISS index."""
-    root = Path(persist_directory) / index_name
+    root = _maybe_migrate_legacy_index_dir(persist_directory, index_name)
     index_path = root / INDEX_FILENAME
     store_path = root / STORE_FILENAME
 

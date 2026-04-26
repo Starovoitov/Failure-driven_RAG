@@ -9,10 +9,11 @@ EMBEDDING_MODEL="${EMBEDDING_MODEL:-intfloat/e5-base-v2}"
 if [[ -z "${EMBEDDING_MODEL// }" ]]; then
   EMBEDDING_MODEL="intfloat/e5-base-v2"
 fi
-FAISS_PATH="${FAISS_PATH:-artifacts/faiss}"
+FAISS_PATH="${FAISS_PATH:-data/faiss}"
+FAISS_INDEX_NAME="${FAISS_INDEX_NAME:-faiss}"
 RERANKER_MODEL="${RERANKER_MODEL:-artifacts/models/reranker-failure-driven}"
 if [[ ! -d "$RERANKER_MODEL" ]]; then
-  RERANKER_MODEL="cross-encoder/ms-marco-MiniLM-L-6-v2"
+  RERANKER_MODEL="cross-encoder/ms-marco-MiniLM-L-12-v2"
 fi
 
 # BEST / STABLE CONFIG (source of truth)
@@ -50,7 +51,7 @@ python main.py build_parser \
   --max-chunks-per-category 45 \
   --embedding-model "$EMBEDDING_MODEL" \
 
-python -c "from embeddings.embedder import prepare_embedding_input, build_faiss_index; prepare_embedding_input('data/rag_dataset.jsonl', 'data/embeddings_input.jsonl'); build_faiss_index(input_jsonl='data/embeddings_input.jsonl', persist_directory='$FAISS_PATH', index_name='rag_chunks', model_name='$EMBEDDING_MODEL')"
+python -c "from embeddings.embedder import prepare_embedding_input, build_faiss_index; prepare_embedding_input('data/rag_dataset.jsonl', 'data/embeddings_input.jsonl'); build_faiss_index(input_jsonl='data/embeddings_input.jsonl', persist_directory='$FAISS_PATH', index_name='$FAISS_INDEX_NAME', model_name='$EMBEDDING_MODEL')"
 
 python main.py build_evaluation_dataset \
   --rag data/rag_dataset.jsonl \
@@ -71,7 +72,7 @@ python main.py evaluation_runner \
   --rerank \
   --rag-dataset data/rag_dataset.jsonl \
   --faiss-path "$FAISS_PATH" \
-  --index rag_chunks \
+  --index "$FAISS_INDEX_NAME" \
   --embedding-model "$EMBEDDING_MODEL" \
   --rerank-candidates 150 \
   --rerank-alpha 0.35 \

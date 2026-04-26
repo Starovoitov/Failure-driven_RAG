@@ -84,7 +84,7 @@ def generate_embeddings(
 
 def upsert_embeddings_to_faiss(
     embedding_records: list[dict[str, Any]],
-    persist_directory: str = "artifacts/faiss",
+    persist_directory: str = "data/faiss",
     index_name: str = "rag_chunks",
 ) -> int:
     """Persist embedding records into a local FAISS index + sidecar store."""
@@ -97,7 +97,7 @@ def upsert_embeddings_to_faiss(
 
 def build_faiss_index(
     input_jsonl: str = "data/embeddings_input.jsonl",
-    persist_directory: str = "artifacts/faiss",
+    persist_directory: str = "data/faiss",
     index_name: str = "rag_chunks",
     model_name: str = DEFAULT_EMBEDDING_MODEL,
 ) -> int:

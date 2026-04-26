@@ -25,6 +25,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-chunks-per-category", type=int, default=45)
     parser.add_argument("--chunker-mode", choices=("token", "semantic_dynamic"), default="token")
     parser.add_argument("--near-duplicate-jaccard", type=float, default=0.0)
+    parser.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+    parser.add_argument("--log-path", default=None)
+    parser.add_argument("--log-json", action="store_true")
     return parser
 
 
@@ -42,6 +45,9 @@ def main() -> None:
         max_chunks_per_category=args.max_chunks_per_category,
         chunker_mode=args.chunker_mode,
         near_duplicate_jaccard=args.near_duplicate_jaccard,
+        log_level=args.log_level,
+        log_path=args.log_path,
+        log_json=args.log_json,
     )
     print(json.dumps(stats, indent=2))
 

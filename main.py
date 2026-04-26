@@ -885,6 +885,9 @@ def cmd_build_parser(args: argparse.Namespace) -> None:
         max_chunks_per_category=args.max_chunks_per_category,
         chunker_mode=args.chunker_mode,
         near_duplicate_jaccard=args.near_duplicate_jaccard,
+        log_level=args.log_level,
+        log_path=args.log_path,
+        log_json=args.log_json,
     )
     stats["embedding_model"] = args.embedding_model
     print(json.dumps(stats, indent=2))
@@ -1640,6 +1643,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip near-duplicate chunks from the same URL when similarity >= threshold (0 disables).",
     )
     build_parser_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
+    build_parser_cmd.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+    build_parser_cmd.add_argument("--log-path", default=None)
+    build_parser_cmd.add_argument("--log-json", action="store_true")
     build_parser_cmd.set_defaults(handler=cmd_build_parser)
 
     demo_cmd = subparsers.add_parser("demo_retrieval", help="Run BM25/semantic/hybrid retrieval demo.")
@@ -1647,7 +1653,7 @@ def build_parser() -> argparse.ArgumentParser:
     demo_cmd.add_argument("--top-k", "-k", type=int, default=4)
     demo_cmd.add_argument("--model", "-m", default=DEFAULT_EMBEDDING_MODEL)
     demo_cmd.add_argument("--dataset", default="data/rag_dataset.jsonl")
-    demo_cmd.add_argument("--faiss-path", default="artifacts/faiss")
+    demo_cmd.add_argument("--faiss-path", default="data/faiss")
     demo_cmd.add_argument("--index", default="rag_chunks")
     demo_cmd.add_argument("--rerank", action="store_true")
     demo_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
@@ -1663,7 +1669,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument("--retriever", choices=("semantic", "bm25", "hybrid"), default="semantic")
     eval_cmd.add_argument("--k-values", default="1,3,5")
     eval_cmd.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
-    eval_cmd.add_argument("--faiss-path", default="artifacts/faiss")
+    eval_cmd.add_argument("--faiss-path", default="data/faiss")
     eval_cmd.add_argument("--index", default="rag_chunks")
     eval_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     eval_cmd.add_argument("--alpha", type=float, default=0.7)
@@ -1840,7 +1846,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rerank_pipeline_cmd.add_argument("--dataset", default="data/evaluation_with_evidence.jsonl")
     rerank_pipeline_cmd.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
-    rerank_pipeline_cmd.add_argument("--faiss-path", default="artifacts/faiss")
+    rerank_pipeline_cmd.add_argument("--faiss-path", default="data/faiss")
     rerank_pipeline_cmd.add_argument("--index", default="rag_chunks")
     rerank_pipeline_cmd.add_argument("--embedding-model", default="intfloat/e5-base-v2")
     rerank_pipeline_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
@@ -1888,7 +1894,7 @@ def build_parser() -> argparse.ArgumentParser:
     rag_cmd.add_argument("--model", default=None)
     rag_cmd.add_argument("--top-k", type=int, default=5)
     rag_cmd.add_argument("--max-context-tokens", type=int, default=2500)
-    rag_cmd.add_argument("--faiss-path", default="artifacts/faiss")
+    rag_cmd.add_argument("--faiss-path", default="data/faiss")
     rag_cmd.add_argument("--index", default="rag_chunks")
     rag_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     rag_cmd.add_argument("--stream", action="store_true")
@@ -1907,7 +1913,7 @@ def build_parser() -> argparse.ArgumentParser:
     rag_cmd.set_defaults(handler=cmd_run_rag)
 
     clean_cmd = subparsers.add_parser("cleanup_faiss", help="Delete FAISS index and optionally full directory.")
-    clean_cmd.add_argument("--faiss-path", default="artifacts/faiss")
+    clean_cmd.add_argument("--faiss-path", default="data/faiss")
     clean_cmd.add_argument("--index", default="rag_chunks")
     clean_cmd.add_argument("--drop-persist-directory", action="store_true")
     clean_cmd.set_defaults(handler=cmd_cleanup_faiss)
@@ -1982,7 +1988,7 @@ def build_parser() -> argparse.ArgumentParser:
     experiments_cmd.add_argument("--models", default="openai,gigachat,ollama,qwen")
     experiments_cmd.add_argument("--top-k", type=int, default=5)
     experiments_cmd.add_argument("--max-context-tokens", type=int, default=2500)
-    experiments_cmd.add_argument("--faiss-path", default="artifacts/faiss")
+    experiments_cmd.add_argument("--faiss-path", default="data/faiss")
     experiments_cmd.add_argument("--index", default="rag_chunks")
     experiments_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     experiments_cmd.add_argument("--log-path", default="experiments/logs/llm_experiment_results.jsonl")

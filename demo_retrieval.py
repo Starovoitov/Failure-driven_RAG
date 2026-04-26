@@ -153,7 +153,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--faiss-path",
-        default="artifacts/faiss",
+        default="data/faiss",
         help="Persistent FAISS directory containing chunk embeddings.",
     )
     parser.add_argument(

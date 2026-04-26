@@ -25,7 +25,7 @@ def _read_raw_chunks(dataset_path: str) -> Iterator[dict[str, Any]]:
 
 def run_parser_and_upsert_to_faiss(
     dataset_path: str = "data/rag_dataset.jsonl",
-    persist_directory: str = "artifacts/faiss",
+    persist_directory: str = "data/faiss",
     index_name: str = "rag_chunks",
     model_name: str = DEFAULT_EMBEDDING_MODEL,
     min_tokens: int = 300,
@@ -98,7 +98,7 @@ def load_chunk_texts(rag_dataset_path: str | Path) -> dict[str, str]:
 
 
 def load_semantic_documents_from_faiss(
-    persist_directory: str = "artifacts/faiss",
+    persist_directory: str = "data/faiss",
     index_name: str = "rag_chunks",
 ) -> list[SemanticDocument]:
     """Load documents and precomputed embeddings from a persisted FAISS store."""

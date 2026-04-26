@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import types
@@ -119,6 +120,35 @@ class TestFaissStore(unittest.TestCase):
             docs = self.faiss_store.load_semantic_documents_from_faiss(persist_directory=td, index_name="idx")
             self.assertEqual(len(docs), 1)
             self.assertEqual(docs[0].doc_id, "b")
+
+    def test_load_migrates_legacy_root_index_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            old_cwd = Path.cwd()
+            legacy_root = workspace / "rag_chunks"
+            legacy_root.mkdir(parents=True)
+            (legacy_root / "store.json").write_text(
+                json.dumps({"ids": ["d1"], "texts": ["doc1"], "metadatas": [{}]}),
+                encoding="utf-8",
+            )
+            (legacy_root / "vectors.index").write_text("fake-index", encoding="utf-8")
+            self._saved_index = _FakeIndex(2)
+            self._saved_index.vectors = [[0.1, 0.2]]
+            self._saved_index.ntotal = 1
+
+            try:
+                # Migration checks relative legacy path ("./rag_chunks"), so run in temp workspace.
+                os.chdir(workspace)
+                docs = self.faiss_store.load_semantic_documents_from_faiss(
+                    persist_directory=str(workspace / "data" / "faiss"),
+                    index_name="rag_chunks",
+                )
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertEqual(len(docs), 1)
+            self.assertFalse((workspace / "rag_chunks").exists())
+            self.assertTrue((workspace / "data" / "faiss" / "rag_chunks" / "store.json").exists())
 
 
 if __name__ == "__main__":

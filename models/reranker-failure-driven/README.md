@@ -4,9 +4,9 @@ tags:
 - cross-encoder
 - reranker
 - generated_from_trainer
-- dataset_size:928
+- dataset_size:447
 - loss:BinaryCrossEntropyLoss
-base_model: cross-encoder/ms-marco-MiniLM-L6-v2
+base_model: cross-encoder/ms-marco-MiniLM-L12-v2
 pipeline_tag: text-ranking
 library_name: sentence-transformers
 metrics:
@@ -18,7 +18,7 @@ metrics:
 - recall
 - average_precision
 model-index:
-- name: CrossEncoder based on cross-encoder/ms-marco-MiniLM-L6-v2
+- name: CrossEncoder based on cross-encoder/ms-marco-MiniLM-L12-v2
   results:
   - task:
       type: cross-encoder-binary-classification
@@ -28,37 +28,37 @@ model-index:
       type: failure-driven-val
     metrics:
     - type: accuracy
-      value: 0.8958333333333334
+      value: 1.0
       name: Accuracy
     - type: accuracy_threshold
-      value: -4.960968017578125
+      value: 1.2924163341522217
       name: Accuracy Threshold
     - type: f1
-      value: 0.9056603773584906
+      value: 1.0
       name: F1
     - type: f1_threshold
-      value: -4.960968017578125
+      value: 1.2924163341522217
       name: F1 Threshold
     - type: precision
-      value: 0.8275862068965517
+      value: 1.0
       name: Precision
     - type: recall
       value: 1.0
       name: Recall
     - type: average_precision
-      value: 0.8631066411238826
+      value: 1.0
       name: Average Precision
 ---
 
-# CrossEncoder based on cross-encoder/ms-marco-MiniLM-L6-v2
+# CrossEncoder based on cross-encoder/ms-marco-MiniLM-L12-v2
 
-This is a [Cross Encoder](https://www.sbert.net/docs/cross_encoder/usage/usage.html) model finetuned from [cross-encoder/ms-marco-MiniLM-L6-v2](https://huggingface.co/cross-encoder/ms-marco-MiniLM-L6-v2) using the [sentence-transformers](https://www.SBERT.net) library. It computes scores for pairs of texts, which can be used for text reranking and semantic search.
+This is a [Cross Encoder](https://www.sbert.net/docs/cross_encoder/usage/usage.html) model finetuned from [cross-encoder/ms-marco-MiniLM-L12-v2](https://huggingface.co/cross-encoder/ms-marco-MiniLM-L12-v2) using the [sentence-transformers](https://www.SBERT.net) library. It computes scores for pairs of texts, which can be used for text reranking and semantic search.
 
 ## Model Details
 
 ### Model Description
 - **Model Type:** Cross Encoder
-- **Base model:** [cross-encoder/ms-marco-MiniLM-L6-v2](https://huggingface.co/cross-encoder/ms-marco-MiniLM-L6-v2) <!-- at revision c5ee24cb16019beea0893ab7796b1df96625c6b8 -->
+- **Base model:** [cross-encoder/ms-marco-MiniLM-L12-v2](https://huggingface.co/cross-encoder/ms-marco-MiniLM-L12-v2) <!-- at revision 7b0235231ca2674cb8ca8f022859a6eba2b1c968 -->
 - **Maximum Sequence Length:** 512 tokens
 - **Number of Output Labels:** 1 label
 - **Supported Modality:** Text
@@ -99,25 +99,25 @@ from sentence_transformers import CrossEncoder
 model = CrossEncoder("cross_encoder_model_id")
 # Get scores for pairs of inputs
 pairs = [
+    ['What are good retrieval metrics for RAG?', 'relevant documents or data . RAG evaluation quantifies the accuracy of your retrieval phrase by calculating metrics on the top results your system returns , enabling you to programmatically monitor your pipeline ’ s precision , recall ability , and faithfulness to facts . First , we ’ ll examine some of the most commonly used metrics and how they are derived . Then , we ’ ll survey frameworks and tooling that employ these metrics to quantify the performance of your RAG deployment . Finally , we ’ ll help you choose the best framework and tooling for your use case to ensure your RAG deployments consistently achieve your performance goals . Note : this chapter focuses on RAG pipelines . For an in - depth treatment of Information Retrieval metrics applied broadly , see Evaluating Measures in Information'],
     ['Can structured and unstructured data be combined?', 'application for the user to read . RAG data pipeline flow The following workflow describes a high - level flow for a data pipeline that supplies grounding data for a RAG application . - Documents or other media are either pushed or pulled into a data pipeline . - The data pipeline processes each media file individually by completing the following steps : - Chunking : Breaks down the media file into semantically relevant parts that ideally have a single idea or concept . - Enrich chunks : Adds metadata fields that the pipeline creates based on the content in the chunks . The data pipeline categorizes the metadata into discrete fields , such as title , summary , and keywords . - Embed chunks : Uses an embedding model to vectorize the chunk and any other metadata fields that'],
-    ['Can structured and unstructured data be combined?', "DeepEval ⭐ , an open - source LLM evaluation framework . Let ’ s get started . TL ; DR - RAG pipelines are made up of a retriever and a generator , both of which contribute to the quality of the final response . - RAG metrics measures either the retriever and generator in isolation , focusing on relevancy , hallucination , and retrieval . - Retriever metrics include : Contextual recall , precision , and relevancy , used for evaluating things like top - K values and embedding models . - Generator metrics include : Faithfulness and answer relevancy , used for evaluating the LLM and prompt template . - RAG metrics are generic , and you ' ll want to use at least one additional custom metric to tailor towards your use case . - Agentic RAG"],
-    ['What are good retrieval metrics for RAG?', "are generic , and you ' ll want to use at least one additional custom metric to tailor towards your use case . - Agentic RAG requires additional metrics such as task completion . - DeepEval ( 100 % OS ⭐ https : / / github . com / confident - ai / deepeval ) allows anyone to implement SOTA RAG metrics in 5 lines of code . What is RAG Evaluation ? RAG evaluation is the process of using metrics such as answer relevancy , faithfulness , and contextual relevancy to test the quality of a RAG pipeline ’ s “ retriever ” and the “ generator ” separately to measure each component ’ s contribution to the final response quality To do this , RAG evaluation involves 5 key industry - standard metrics : - Answer Relevancy :"],
-    ['What is the role of data labeling in RAG?', 'control over which sources are used , real - time data access , authorization to data , guardrails / safety / compliance , traceability / source citations , retrieval strategies , cost , tune each component independently of the others - Cost - effective compared to alternatives like training / re - training your own model , fine - tuning , or stuffing the context window : foundation models are costly to produce and require specialized knowledge to create , as is fine - tuning ; the larger the context sent to the model , the higher the cost RAG in support of agentic workflows But this traditional RAG approach is simple , often with a vector database and a one - shot prompt with context sent to the model to generate output . With the rise of AI agents'],
-    ['How can batching improve performance?', "eliminate differences that don ' t affect the meaning of the content . This method supports closeness matches . - Augment chunks . Consider augmenting your chunk data with common metadata fields and understand their potential uses in search . Learn about commonly used tools or techniques for generating metadata content . During the embedding phase , you should : - Understand the importance of the embedding model . An embedding model can significantly affect the relevancy of your vector search results . - Choose the right embedding model for your use case . - Evaluate embedding models . Evaluate embedding models by visualizing embeddings and calculating embedding distances . During the information retrieval phase , you should : - Create a search index . Apply the appropriate vector search configurations to your vector fields . - Understand search options"],
+    ['How can you reduce token usage in RAG?', 'Open - Source AI Cookbook documentation Advanced RAG on Hugging Face documentation using LangChain Advanced RAG on Hugging Face documentation using LangChain Authored by : Aymeric Roucher This notebook demonstrates how you can build an advanced RAG ( Retrieval Augmented Generation ) for answering a user ’ s question about a specific knowledge base ( here , the HuggingFace documentation ) , using LangChain . For an introduction to RAG , you can check this other cookbook ! RAG systems are complex , with many moving parts : here is a RAG diagram , where we noted in blue all possibilities for system enhancement : 💡 As you can see , there are many steps to tune in this architecture : tuning the system properly will yield significant performance gains . In this notebook , we will take a look'],
+    ['What are the main components of a RAG system?', ". For agentic RAG use cases , which we ' ll cover more in a later section , you might also find it useful to include a task completion metric to evaluate your AI agent RAG pipeline as well . Before we get too into the metrics though and RAG agents , let ’ s recap what RAG is . A RAG pipeline is an architecture where an LLM ’ s output is informed by external data that is retrieved at runtime based on an input . Rather than relying solely on the model ’ s trained knowledge , a RAG system first : - Searches a knowledge source — like a document database , vector store , or API , then - Feeds the retrieved content into the prompt for the LLM to generate a response . Here ’"],
+    ['What are good retrieval metrics for RAG?', "’ s contribution to the final response quality To do this , RAG evaluation involves 5 key industry - standard metrics : - Answer Relevancy : How relevant the generated response is to the given input . - Faithfulness : Whether the generated response contains hallucinations to the retrieval context . - Contextual Relevancy : How relevant the retrieval context is to the input . - Contextual Recall : Whether the retrieval context contains all the information required to produce the ideal output ( for a given input ) . - Contextual Precision : Whether the retrieval context is ranked in the correct order ( higher relevancy goes first ) for a given input . For agentic RAG use cases , which we ' ll cover more in a later section , you might also find it useful to include"],
 ]
 scores = model.predict(pairs)
 print(scores)
-# [ 8.1228  7.2082 -7.7935 -5.3628  7.9509]
+# [-6.4667  7.7422 -8.9841 -6.1198 -6.1198]
 
 # Or rank different texts based on similarity to a single text
 ranks = model.rank(
-    'Can structured and unstructured data be combined?',
+    'What are good retrieval metrics for RAG?',
     [
+        'relevant documents or data . RAG evaluation quantifies the accuracy of your retrieval phrase by calculating metrics on the top results your system returns , enabling you to programmatically monitor your pipeline ’ s precision , recall ability , and faithfulness to facts . First , we ’ ll examine some of the most commonly used metrics and how they are derived . Then , we ’ ll survey frameworks and tooling that employ these metrics to quantify the performance of your RAG deployment . Finally , we ’ ll help you choose the best framework and tooling for your use case to ensure your RAG deployments consistently achieve your performance goals . Note : this chapter focuses on RAG pipelines . For an in - depth treatment of Information Retrieval metrics applied broadly , see Evaluating Measures in Information',
         'application for the user to read . RAG data pipeline flow The following workflow describes a high - level flow for a data pipeline that supplies grounding data for a RAG application . - Documents or other media are either pushed or pulled into a data pipeline . - The data pipeline processes each media file individually by completing the following steps : - Chunking : Breaks down the media file into semantically relevant parts that ideally have a single idea or concept . - Enrich chunks : Adds metadata fields that the pipeline creates based on the content in the chunks . The data pipeline categorizes the metadata into discrete fields , such as title , summary , and keywords . - Embed chunks : Uses an embedding model to vectorize the chunk and any other metadata fields that',
-        "DeepEval ⭐ , an open - source LLM evaluation framework . Let ’ s get started . TL ; DR - RAG pipelines are made up of a retriever and a generator , both of which contribute to the quality of the final response . - RAG metrics measures either the retriever and generator in isolation , focusing on relevancy , hallucination , and retrieval . - Retriever metrics include : Contextual recall , precision , and relevancy , used for evaluating things like top - K values and embedding models . - Generator metrics include : Faithfulness and answer relevancy , used for evaluating the LLM and prompt template . - RAG metrics are generic , and you ' ll want to use at least one additional custom metric to tailor towards your use case . - Agentic RAG",
-        "are generic , and you ' ll want to use at least one additional custom metric to tailor towards your use case . - Agentic RAG requires additional metrics such as task completion . - DeepEval ( 100 % OS ⭐ https : / / github . com / confident - ai / deepeval ) allows anyone to implement SOTA RAG metrics in 5 lines of code . What is RAG Evaluation ? RAG evaluation is the process of using metrics such as answer relevancy , faithfulness , and contextual relevancy to test the quality of a RAG pipeline ’ s “ retriever ” and the “ generator ” separately to measure each component ’ s contribution to the final response quality To do this , RAG evaluation involves 5 key industry - standard metrics : - Answer Relevancy :",
-        'control over which sources are used , real - time data access , authorization to data , guardrails / safety / compliance , traceability / source citations , retrieval strategies , cost , tune each component independently of the others - Cost - effective compared to alternatives like training / re - training your own model , fine - tuning , or stuffing the context window : foundation models are costly to produce and require specialized knowledge to create , as is fine - tuning ; the larger the context sent to the model , the higher the cost RAG in support of agentic workflows But this traditional RAG approach is simple , often with a vector database and a one - shot prompt with context sent to the model to generate output . With the rise of AI agents',
-        "eliminate differences that don ' t affect the meaning of the content . This method supports closeness matches . - Augment chunks . Consider augmenting your chunk data with common metadata fields and understand their potential uses in search . Learn about commonly used tools or techniques for generating metadata content . During the embedding phase , you should : - Understand the importance of the embedding model . An embedding model can significantly affect the relevancy of your vector search results . - Choose the right embedding model for your use case . - Evaluate embedding models . Evaluate embedding models by visualizing embeddings and calculating embedding distances . During the information retrieval phase , you should : - Create a search index . Apply the appropriate vector search configurations to your vector fields . - Understand search options",
+        'Open - Source AI Cookbook documentation Advanced RAG on Hugging Face documentation using LangChain Advanced RAG on Hugging Face documentation using LangChain Authored by : Aymeric Roucher This notebook demonstrates how you can build an advanced RAG ( Retrieval Augmented Generation ) for answering a user ’ s question about a specific knowledge base ( here , the HuggingFace documentation ) , using LangChain . For an introduction to RAG , you can check this other cookbook ! RAG systems are complex , with many moving parts : here is a RAG diagram , where we noted in blue all possibilities for system enhancement : 💡 As you can see , there are many steps to tune in this architecture : tuning the system properly will yield significant performance gains . In this notebook , we will take a look',
+        ". For agentic RAG use cases , which we ' ll cover more in a later section , you might also find it useful to include a task completion metric to evaluate your AI agent RAG pipeline as well . Before we get too into the metrics though and RAG agents , let ’ s recap what RAG is . A RAG pipeline is an architecture where an LLM ’ s output is informed by external data that is retrieved at runtime based on an input . Rather than relying solely on the model ’ s trained knowledge , a RAG system first : - Searches a knowledge source — like a document database , vector store , or API , then - Feeds the retrieved content into the prompt for the LLM to generate a response . Here ’",
+        "’ s contribution to the final response quality To do this , RAG evaluation involves 5 key industry - standard metrics : - Answer Relevancy : How relevant the generated response is to the given input . - Faithfulness : Whether the generated response contains hallucinations to the retrieval context . - Contextual Relevancy : How relevant the retrieval context is to the input . - Contextual Recall : Whether the retrieval context contains all the information required to produce the ideal output ( for a given input ) . - Contextual Precision : Whether the retrieval context is ranked in the correct order ( higher relevancy goes first ) for a given input . For agentic RAG use cases , which we ' ll cover more in a later section , you might also find it useful to include",
     ]
 )
 # [{'corpus_id': ..., 'score': ...}, {'corpus_id': ..., 'score': ...}, ...]
@@ -156,15 +156,15 @@ You can finetune this model on your own dataset.
 * Dataset: `failure-driven-val`
 * Evaluated with [<code>CEBinaryClassificationEvaluator</code>](https://sbert.net/docs/package_reference/cross_encoder/evaluation.html#sentence_transformers.cross_encoder.evaluation.CEBinaryClassificationEvaluator)
 
-| Metric                | Value      |
-|:----------------------|:-----------|
-| accuracy              | 0.8958     |
-| accuracy_threshold    | -4.961     |
-| f1                    | 0.9057     |
-| f1_threshold          | -4.961     |
-| precision             | 0.8276     |
-| recall                | 1.0        |
-| **average_precision** | **0.8631** |
+| Metric                | Value   |
+|:----------------------|:--------|
+| accuracy              | 1.0     |
+| accuracy_threshold    | 1.2924  |
+| f1                    | 1.0     |
+| f1_threshold          | 1.2924  |
+| precision             | 1.0     |
+| recall                | 1.0     |
+| **average_precision** | **1.0** |
 
 <!--
 ## Bias, Risks and Limitations
@@ -184,19 +184,19 @@ You can finetune this model on your own dataset.
 
 #### Unnamed Dataset
 
-* Size: 928 training samples
+* Size: 447 training samples
 * Columns: <code>sentence_0</code>, <code>sentence_1</code>, and <code>label</code>
-* Approximate statistics based on the first 928 samples:
+* Approximate statistics based on the first 447 samples:
   |         | sentence_0                                                                        | sentence_1                                                                            | label                                                         |
   |:--------|:----------------------------------------------------------------------------------|:--------------------------------------------------------------------------------------|:--------------------------------------------------------------|
   | type    | string                                                                            | string                                                                                | float                                                         |
-  | details | <ul><li>min: 7 tokens</li><li>mean: 10.46 tokens</li><li>max: 13 tokens</li></ul> | <ul><li>min: 142 tokens</li><li>mean: 159.45 tokens</li><li>max: 257 tokens</li></ul> | <ul><li>min: 0.0</li><li>mean: 0.5</li><li>max: 1.0</li></ul> |
+  | details | <ul><li>min: 9 tokens</li><li>mean: 10.96 tokens</li><li>max: 12 tokens</li></ul> | <ul><li>min: 143 tokens</li><li>mean: 158.21 tokens</li><li>max: 237 tokens</li></ul> | <ul><li>min: 0.0</li><li>mean: 0.5</li><li>max: 1.0</li></ul> |
 * Samples:
-  | sentence_0                                                     | sentence_1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | label            |
-  |:---------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-----------------|
-  | <code>Can structured and unstructured data be combined?</code> | <code>application for the user to read . RAG data pipeline flow The following workflow describes a high - level flow for a data pipeline that supplies grounding data for a RAG application . - Documents or other media are either pushed or pulled into a data pipeline . - The data pipeline processes each media file individually by completing the following steps : - Chunking : Breaks down the media file into semantically relevant parts that ideally have a single idea or concept . - Enrich chunks : Adds metadata fields that the pipeline creates based on the content in the chunks . The data pipeline categorizes the metadata into discrete fields , such as title , summary , and keywords . - Embed chunks : Uses an embedding model to vectorize the chunk and any other metadata fields that</code> | <code>1.0</code> |
-  | <code>Can structured and unstructured data be combined?</code> | <code>DeepEval ⭐ , an open - source LLM evaluation framework . Let ’ s get started . TL ; DR - RAG pipelines are made up of a retriever and a generator , both of which contribute to the quality of the final response . - RAG metrics measures either the retriever and generator in isolation , focusing on relevancy , hallucination , and retrieval . - Retriever metrics include : Contextual recall , precision , and relevancy , used for evaluating things like top - K values and embedding models . - Generator metrics include : Faithfulness and answer relevancy , used for evaluating the LLM and prompt template . - RAG metrics are generic , and you ' ll want to use at least one additional custom metric to tailor towards your use case . - Agentic RAG</code>                                        | <code>1.0</code> |
-  | <code>What are good retrieval metrics for RAG?</code>          | <code>are generic , and you ' ll want to use at least one additional custom metric to tailor towards your use case . - Agentic RAG requires additional metrics such as task completion . - DeepEval ( 100 % OS ⭐ https : / / github . com / confident - ai / deepeval ) allows anyone to implement SOTA RAG metrics in 5 lines of code . What is RAG Evaluation ? RAG evaluation is the process of using metrics such as answer relevancy , faithfulness , and contextual relevancy to test the quality of a RAG pipeline ’ s “ retriever ” and the “ generator ” separately to measure each component ’ s contribution to the final response quality To do this , RAG evaluation involves 5 key industry - standard metrics : - Answer Relevancy :</code>                                                                  | <code>0.0</code> |
+  | sentence_0                                                     | sentence_1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | label            |
+  |:---------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-----------------|
+  | <code>What are good retrieval metrics for RAG?</code>          | <code>relevant documents or data . RAG evaluation quantifies the accuracy of your retrieval phrase by calculating metrics on the top results your system returns , enabling you to programmatically monitor your pipeline ’ s precision , recall ability , and faithfulness to facts . First , we ’ ll examine some of the most commonly used metrics and how they are derived . Then , we ’ ll survey frameworks and tooling that employ these metrics to quantify the performance of your RAG deployment . Finally , we ’ ll help you choose the best framework and tooling for your use case to ensure your RAG deployments consistently achieve your performance goals . Note : this chapter focuses on RAG pipelines . For an in - depth treatment of Information Retrieval metrics applied broadly , see Evaluating Measures in Information</code> | <code>0.0</code> |
+  | <code>Can structured and unstructured data be combined?</code> | <code>application for the user to read . RAG data pipeline flow The following workflow describes a high - level flow for a data pipeline that supplies grounding data for a RAG application . - Documents or other media are either pushed or pulled into a data pipeline . - The data pipeline processes each media file individually by completing the following steps : - Chunking : Breaks down the media file into semantically relevant parts that ideally have a single idea or concept . - Enrich chunks : Adds metadata fields that the pipeline creates based on the content in the chunks . The data pipeline categorizes the metadata into discrete fields , such as title , summary , and keywords . - Embed chunks : Uses an embedding model to vectorize the chunk and any other metadata fields that</code>                              | <code>1.0</code> |
+  | <code>How can you reduce token usage in RAG?</code>            | <code>Open - Source AI Cookbook documentation Advanced RAG on Hugging Face documentation using LangChain Advanced RAG on Hugging Face documentation using LangChain Authored by : Aymeric Roucher This notebook demonstrates how you can build an advanced RAG ( Retrieval Augmented Generation ) for answering a user ’ s question about a specific knowledge base ( here , the HuggingFace documentation ) , using LangChain . For an introduction to RAG , you can check this other cookbook ! RAG systems are complex , with many moving parts : here is a RAG diagram , where we noted in blue all possibilities for system enhancement : 💡 As you can see , there are many steps to tune in this architecture : tuning the system properly will yield significant performance gains . In this notebook , we will take a look</code>                | <code>0.0</code> |
 * Loss: [<code>BinaryCrossEntropyLoss</code>](https://sbert.net/docs/package_reference/cross_encoder/losses.html#binarycrossentropyloss) with these parameters:
   ```json
   {
@@ -208,15 +208,13 @@ You can finetune this model on your own dataset.
 ### Training Hyperparameters
 #### Non-Default Hyperparameters
 
-- `per_device_train_batch_size`: 16
-- `num_train_epochs`: 5
-- `per_device_eval_batch_size`: 16
+- `num_train_epochs`: 4
 
 #### All Hyperparameters
 <details><summary>Click to expand</summary>
 
-- `per_device_train_batch_size`: 16
-- `num_train_epochs`: 5
+- `per_device_train_batch_size`: 8
+- `num_train_epochs`: 4
 - `max_steps`: -1
 - `learning_rate`: 5e-05
 - `lr_scheduler_type`: linear
@@ -257,7 +255,7 @@ You can finetune this model on your own dataset.
 - `disable_tqdm`: False
 - `project`: huggingface
 - `trackio_space_id`: trackio
-- `per_device_eval_batch_size`: 16
+- `per_device_eval_batch_size`: 8
 - `prediction_loss_only`: True
 - `eval_on_start`: False
 - `eval_do_concat_batches`: True
@@ -317,15 +315,14 @@ You can finetune this model on your own dataset.
 ### Training Logs
 | Epoch | Step | failure-driven-val_average_precision |
 |:-----:|:----:|:------------------------------------:|
-| 1.0   | 58   | 0.7885                               |
-| 2.0   | 116  | 0.8855                               |
-| 3.0   | 174  | 0.8631                               |
-| 4.0   | 232  | 0.8686                               |
-| 5.0   | 290  | 0.8631                               |
+| 1.0   | 56   | 0.7824                               |
+| 2.0   | 112  | 1.0                                  |
+| 3.0   | 168  | 1.0                                  |
+| 4.0   | 224  | 1.0                                  |
 
 
 ### Training Time
-- **Training**: 16.1 seconds
+- **Training**: 12.4 seconds
 
 ### Framework Versions
 - Python: 3.12.3

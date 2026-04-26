@@ -12,6 +12,7 @@ from parser.normalize import normalize_text
 from parser.qa import build_qa_pairs
 from parser.scraper import scrape_source
 from parser.sources import build_sources
+from utils.logger import configure_runtime_logger
 
 
 def run_pipeline(
@@ -25,8 +26,17 @@ def run_pipeline(
     max_chunks_per_category: int = 45,
     chunker_mode: str = "token",
     near_duplicate_jaccard: float = 0.0,
+    log_level: str = "INFO",
+    log_path: str | None = None,
+    log_json: bool = False,
 ) -> dict[str, int]:
     """Run scraping-to-JSONL flow and return aggregate output counters."""
+    logger = configure_runtime_logger(
+        "rag.build_parser",
+        level=log_level,
+        log_path=log_path,
+        json_logs=log_json,
+    )
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -41,15 +51,38 @@ def run_pipeline(
         "skipped_by_near_duplicate": 0,
     }
     sources = build_sources()
+    total_sources = len(sources)
     chunks_per_url: dict[str, int] = {}
     chunks_per_category: dict[str, int] = {}
     accepted_chunks_by_url: dict[str, list[str]] = {}
+    logger.info("starting parser pipeline: output=%s sources=%s", output_path, total_sources)
 
     with out.open("w", encoding="utf-8") as f:
-        for source in sources:
+        for source_idx, source in enumerate(sources, start=1):
+            logger.info(
+                "processing source %s/%s: category=%s subtopic=%s url=%s",
+                source_idx,
+                total_sources,
+                source.category,
+                source.subtopic,
+                source.url,
+            )
+            source_raw_before = counters["raw_chunks"]
+            source_qa_before = counters["qa_pairs"]
+            source_skipped_token_before = counters["skipped_by_token_filter"]
+            source_skipped_url_before = counters["skipped_by_url_cap"]
+            source_skipped_category_before = counters["skipped_by_category_cap"]
+            source_skipped_near_dup_before = counters["skipped_by_near_duplicate"]
             try:
                 parsed = scrape_source(source)
             except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "source failed: category=%s subtopic=%s url=%s error=%s",
+                    source.category,
+                    source.subtopic,
+                    source.url,
+                    exc,
+                )
                 err = {
                     "record_type": "source_error",
                     "url": source.url,
@@ -128,7 +161,19 @@ def run_pipeline(
             for edge_case in build_edge_cases(sample_metadata):
                 f.write(json.dumps(edge_case.to_dict(), ensure_ascii=False) + "\n")
                 counters["edge_cases"] += 1
+            logger.info(
+                "source complete %s/%s: raw_chunks=%s qa_pairs=%s skipped(token/url/category/near_dup)=%s/%s/%s/%s",
+                source_idx,
+                total_sources,
+                counters["raw_chunks"] - source_raw_before,
+                counters["qa_pairs"] - source_qa_before,
+                counters["skipped_by_token_filter"] - source_skipped_token_before,
+                counters["skipped_by_url_cap"] - source_skipped_url_before,
+                counters["skipped_by_category_cap"] - source_skipped_category_before,
+                counters["skipped_by_near_duplicate"] - source_skipped_near_dup_before,
+            )
 
+    logger.info("parser pipeline completed: %s", json.dumps(counters, ensure_ascii=False))
     return counters
 
 

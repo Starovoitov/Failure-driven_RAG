@@ -72,7 +72,13 @@ python main.py build_parser --output data/rag_dataset.jsonl --embedding-model in
 Build FAISS index:
 
 ```bash
-python -c "from embeddings.embedder import prepare_embedding_input, build_faiss_index; prepare_embedding_input('data/rag_dataset.jsonl', 'data/embeddings_input.jsonl'); build_faiss_index(input_jsonl='data/embeddings_input.jsonl', persist_directory='data/faiss', index_name='.', model_name='intfloat/e5-base-v2')"
+python main.py build_faiss \
+  --prepare-input \
+  --rag-dataset data/rag_dataset.jsonl \
+  --input-jsonl data/embeddings_input.jsonl \
+  --faiss-path data/faiss \
+  --index . \
+  --embedding-model intfloat/e5-base-v2
 ```
 
 Build evaluation dataset:
@@ -490,7 +496,12 @@ python main.py build_parser \
 ### 2) Build embeddings + FAISS
 
 ```bash
-python -c "from embeddings.embedder import prepare_embedding_input, build_faiss_index; prepare_embedding_input('data/rag_dataset.jsonl', 'data/embeddings_input.jsonl'); build_faiss_index(input_jsonl='data/embeddings_input.jsonl', persist_directory='data/faiss', index_name='.')"
+python main.py build_faiss \
+  --prepare-input \
+  --rag-dataset data/rag_dataset.jsonl \
+  --input-jsonl data/embeddings_input.jsonl \
+  --faiss-path data/faiss \
+  --index .
 ```
 
 ### 3) Retrieval demo

@@ -47,7 +47,13 @@ python main.py build_parser \
   --max-chunks-per-category 45 \
   --embedding-model "$EMBEDDING_MODEL" \
 
-python -c "from embeddings.embedder import prepare_embedding_input, build_faiss_index; prepare_embedding_input('data/rag_dataset.jsonl', 'data/embeddings_input.jsonl'); build_faiss_index(input_jsonl='data/embeddings_input.jsonl', persist_directory='$FAISS_PATH', index_name='$FAISS_INDEX_NAME', model_name='$EMBEDDING_MODEL')"
+python main.py build_faiss \
+  --prepare-input \
+  --rag-dataset data/rag_dataset.jsonl \
+  --input-jsonl data/embeddings_input.jsonl \
+  --faiss-path "$FAISS_PATH" \
+  --index "$FAISS_INDEX_NAME" \
+  --embedding-model "$EMBEDDING_MODEL"
 
 python main.py build_evaluation_dataset \
   --rag data/rag_dataset.jsonl \

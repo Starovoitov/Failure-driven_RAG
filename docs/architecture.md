@@ -204,6 +204,7 @@ python main.py --help
 
 Primary commands:
 - `build_parser`
+- `build_faiss`
 - `demo_retrieval`
 - `evaluation_runner`
 - `reranker_pipeline`

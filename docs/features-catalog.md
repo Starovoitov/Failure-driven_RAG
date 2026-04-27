@@ -7,6 +7,7 @@ This document lists core project features by category with short practical descr
 - `main.py` is the single CLI entry point for parser, retrieval, evaluation, RAG generation, FAISS maintenance, and reranker workflows.
 - `scripts/run_best_eval.sh` is the stable end-to-end reproducible benchmark pipeline (cleanup -> parser -> FAISS -> eval dataset -> evaluation runner -> dataset audit).
 - `reranker_pipeline` runs tuned retrieval evaluation, exports failure-driven training data, and can train a reranker in one pass.
+- `build_faiss` provides a dedicated CLI for FAISS index build (including optional `--prepare-input` from `rag_dataset`).
 
 ## Data Ingestion and Parser Features
 

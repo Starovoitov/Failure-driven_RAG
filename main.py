@@ -1442,6 +1442,42 @@ def cmd_cleanup_faiss(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2))
 
 
+def cmd_build_faiss(args: argparse.Namespace) -> None:
+    # Command-scoped import keeps embedding deps isolated.
+    from embeddings.embedder import build_faiss_index, prepare_embedding_input
+
+    input_jsonl = args.input_jsonl
+    prepared_rows = 0
+    if args.prepare_input:
+        prepared_rows = prepare_embedding_input(
+            input_jsonl=args.rag_dataset,
+            output_jsonl=args.input_jsonl,
+        )
+        input_jsonl = args.input_jsonl
+
+    indexed_rows = build_faiss_index(
+        input_jsonl=input_jsonl,
+        persist_directory=args.faiss_path,
+        index_name=args.index,
+        model_name=args.embedding_model,
+    )
+    print(
+        json.dumps(
+            {
+                "prepare_input": args.prepare_input,
+                "rag_dataset": args.rag_dataset if args.prepare_input else None,
+                "input_jsonl": input_jsonl,
+                "prepared_rows": prepared_rows,
+                "indexed_rows": indexed_rows,
+                "faiss_path": args.faiss_path,
+                "index_name": args.index,
+                "embedding_model": args.embedding_model,
+            },
+            indent=2,
+        )
+    )
+
+
 def cmd_reranker_pipeline(args: argparse.Namespace) -> None:
     eval_args = argparse.Namespace(
         # Core IO
@@ -1967,6 +2003,31 @@ def build_parser() -> argparse.ArgumentParser:
     clean_cmd.add_argument("--index", default=".")
     clean_cmd.add_argument("--drop-persist-directory", action="store_true")
     clean_cmd.set_defaults(handler=cmd_cleanup_faiss)
+
+    build_faiss_cmd = subparsers.add_parser(
+        "build_faiss",
+        aliases=["build-faiss"],
+        help="Build FAISS index from embeddings input or directly from rag dataset.",
+    )
+    build_faiss_cmd.add_argument(
+        "--input-jsonl",
+        default="data/embeddings_input.jsonl",
+        help="Embeddings input JSONL with id/text records.",
+    )
+    build_faiss_cmd.add_argument(
+        "--prepare-input",
+        action="store_true",
+        help="Generate --input-jsonl from --rag-dataset before indexing.",
+    )
+    build_faiss_cmd.add_argument(
+        "--rag-dataset",
+        default="data/rag_dataset.jsonl",
+        help="RAG dataset used when --prepare-input is enabled.",
+    )
+    build_faiss_cmd.add_argument("--faiss-path", default="data/faiss")
+    build_faiss_cmd.add_argument("--index", default=".")
+    build_faiss_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
+    build_faiss_cmd.set_defaults(handler=cmd_build_faiss)
 
     build_eval_cmd = subparsers.add_parser(
         "build_evaluation_dataset",

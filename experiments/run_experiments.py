@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
+from pathlib import Path
 from typing import Any
 
 from sentence_transformers import SentenceTransformer
@@ -13,6 +15,7 @@ from generation.prompt import SourceChunk, build_rag_messages
 from generation.run_rag import build_model_configs
 from ingestion.loaders import load_semantic_documents_from_faiss
 from retrieval.semantic import search_semantic
+from utils.cli_config import load_script_defaults
 from utils.logger import get_json_logger, log_event
 
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
@@ -117,26 +120,36 @@ def run_experiments(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run RAG answer comparison across LLM providers.")
-    parser.add_argument("--question", "-q", required=True, help="Question for the RAG system.")
+    parser.add_argument("--config", help="Path to CLI defaults JSON.")
+    parser.add_argument("--question", "-q", help="Question for the RAG system.")
     parser.add_argument(
         "--models",
-        default="openai,gigachat,ollama,qwen",
+
         help="Comma-separated model keys to run: openai,gigachat,ollama",
     )
-    parser.add_argument("--top-k", type=int, default=5, help="How many retrieved docs to include.")
+    parser.add_argument("--top-k", type=int, help="How many retrieved docs to include.")
     parser.add_argument(
         "--max-context-tokens",
         type=int,
-        default=2500,
+
         help="Approx context token budget before truncation.",
     )
-    parser.add_argument("--faiss-path", default="data/faiss", help="FAISS persist directory.")
-    parser.add_argument("--index", default=".", help="FAISS index name.")
-    parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
-    parser.add_argument("--log-path", default="experiments/logs/llm_experiment_results.jsonl")
-    parser.add_argument("--llm-config-path", default=DEFAULT_LLM_CONFIG_PATH)
+    parser.add_argument("--faiss-path", help="FAISS persist directory.")
+    parser.add_argument("--index", help="FAISS index name.")
+    parser.add_argument("--embedding-model",)
+    parser.add_argument("--log-path",)
+    parser.add_argument("--llm-config-path",)
 
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config")
+    pre_args, _ = pre_parser.parse_known_args(sys.argv[1:])
+    config_path = Path(pre_args.config).expanduser() if pre_args.config else (Path.cwd() / "cli.defaults.json")
+    if not config_path.is_absolute():
+        config_path = Path.cwd() / config_path
+    parser.set_defaults(**load_script_defaults(config_path, "run_experiments"))
     args = parser.parse_args()
+    if not args.question:
+        parser.error("missing required parameter 'question'")
     models = [x.strip() for x in args.models.split(",") if x.strip()]
     run_experiments(
         question=args.question,

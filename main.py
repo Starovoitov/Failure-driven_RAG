@@ -5,12 +5,21 @@ import argparse
 import json
 import os
 import random
+import sys
 from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING
-from parser.sources import DEFAULT_SOURCES_CONFIG_PATH
 from utils.common import min_max_normalize, rank_weight, tokenize
+from utils.cli_config import (
+    apply_config_defaults,
+    load_cli_defaults,
+    validate_required_command_params,
+)
+from utils.query_manipulation import (
+    build_query_variants_with_debug,
+    llm_structured_query_expansion_batch,
+)
 from utils.logger import configure_runtime_logger
 
 if TYPE_CHECKING:
@@ -19,357 +28,11 @@ if TYPE_CHECKING:
 
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 DEFAULT_LLM_CONFIG_PATH = "llm.config.json"
-
-
-def _dedupe_query_variants(variants: list[str]) -> list[str]:
-    deduped: list[str] = []
-    seen_keys: set[str] = set()
-    for variant in variants:
-        key = variant.strip().lower().rstrip("?.!")
-        if not key or key in seen_keys:
-            continue
-        seen_keys.add(key)
-        deduped.append(variant.strip())
-    return deduped
-
-
-def _paraphrase_variants(base: str) -> list[str]:
-    lowered = base.lower()
-    variants: list[str] = []
-    if "?" in base:
-        variants.append(base.replace("?", "").strip())
-    replacements = (
-        ("rag", "retrieval augmented generation"),
-        ("retrieval augmented generation", "rag"),
-        ("reranker", "cross encoder reranker"),
-        ("reranking", "cross encoder reranking"),
-        ("hallucination", "factual consistency"),
-        ("recall", "retrieval coverage"),
-    )
-    for src, dst in replacements:
-        if src in lowered:
-            variants.append(lowered.replace(src, dst))
-    return _dedupe_query_variants(variants)
-
-
-def _decomposition_variants(base: str) -> list[str]:
-    lowered = base.lower().strip().rstrip("?")
-    variants: list[str] = []
-    if "context stuffing" in lowered:
-        variants.extend(
-            [
-                "what does context stuffing mean in rag",
-                "what is adding too much context in llm prompts",
-                "what is overloading context window rag",
-                "problems with too much retrieved context",
-            ]
-        )
-    if "why" in lowered and "recall" in lowered:
-        variants.extend(
-            [
-                "how does recall work in retrieval systems",
-                "what causes low recall in bm25 retrieval",
-                "what causes embedding retrieval misses",
-                "how does hybrid retrieval merge bm25 and dense results",
-            ]
-        )
-    if "hybrid" in lowered:
-        variants.append("how hybrid retrieval combines bm25 and semantic rankings")
-    if "rerank" in lowered:
-        variants.append("what features improve cross encoder reranking quality")
-    if "evaluation" in lowered or "metrics" in lowered:
-        variants.extend(
-            [
-                "how to evaluate retrieval quality in rag systems",
-                "how mrr and ndcg diagnose reranking failures",
-            ]
-        )
-    if not variants:
-        variants.extend(
-            [
-                f"what are the key components of {lowered}",
-                f"what common failure modes appear in {lowered}",
-                f"how to improve {lowered}",
-            ]
-        )
-    return _dedupe_query_variants(variants)
-
-
-def _entity_concept_variants(base: str) -> list[str]:
-    lowered = base.lower()
-    variants: list[str] = []
-    concept_map = (
-        (
-            "context stuffing",
-            [
-                "adding too much context",
-                "overloading prompt context window",
-                "excessive retrieval in rag",
-                "context overload reduces answer quality",
-            ],
-        ),
-        ("evaluation", ["faithfulness", "groundedness", "answer relevance", "retrieval quality metrics"]),
-        ("metrics", ["mrr ndcg recall at k", "ranking quality diagnostics"]),
-        ("recall", ["retrieval coverage", "candidate pool expansion", "bm25 dense recall tradeoff"]),
-        ("hybrid", ["bm25 dense fusion", "rrf hybrid retrieval", "branch-specific retrieval misses"]),
-        ("rerank", ["cross encoder reranking optimization", "hard negative reranker training"]),
-        ("rag", ["retriever generator grounding", "evidence grounded answering"]),
-    )
-    for trigger, expansions in concept_map:
-        if trigger in lowered:
-            variants.extend(expansions)
-    if not variants:
-        variants.extend(["retrieval system failure analysis", "document ranking optimization"])
-    return _dedupe_query_variants(variants)
-
-
-def _parse_llm_expansion_payload(raw_text: str) -> tuple[list[str], list[str], list[str]]:
-    text = _strip_markdown_code_fences(raw_text)
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        return [], [], []
-    paraphrases = [str(item).strip() for item in payload.get("paraphrases", [])]
-    decompositions = [str(item).strip() for item in payload.get("decompositions", [])]
-    concept_expansions = [str(item).strip() for item in payload.get("concept_expansions", [])]
-    return _dedupe_query_variants(paraphrases), _dedupe_query_variants(decompositions), _dedupe_query_variants(
-        concept_expansions
-    )
-
-
-def _llm_structured_query_expansion(
-    query: str,
-    *,
-    provider: str,
-    model: str,
-    api_base: str | None,
-    api_key: str | None,
-    timeout_seconds: int,
-    retries: int,
-    llm_config_path: str,
-    cache_enabled: bool = False,
-    cache_capacity: int = 512,
-    cache_ttl_seconds: float = 300.0,
-) -> tuple[list[str], list[str], list[str]]:
-    # Lazy import keeps core CLI usable without LLM client deps.
-    from generation.llm import call_llm
-    from generation.run_rag import get_llm_config
-
-    conf = get_llm_config(provider=provider, model=model or None, config_path=llm_config_path)
-    if api_base:
-        conf.api_base = api_base
-    if api_key:
-        conf.api_key = api_key
-    conf.max_tokens = 400
-    conf.temperature = 0.2
-    conf.top_p = 1.0
-    conf.timeout_seconds = max(1, timeout_seconds)
-    conf.retries = max(0, retries)
-    conf.cache_enabled = cache_enabled
-    conf.cache_capacity = max(1, cache_capacity)
-    conf.cache_ttl_seconds = max(0.1, cache_ttl_seconds)
-    system_prompt = (
-        "Generate retrieval queries that maximize document coverage. "
-        "Return strict JSON only with keys: paraphrases, decompositions, concept_expansions. "
-        "Each value must be a list of strings."
-    )
-    user_prompt = (
-        "Generate retrieval queries that maximize document coverage.\n\n"
-        "Return:\n"
-        "1 paraphrases\n"
-        "3 decompositions\n"
-        "3 concept-expansion queries\n\n"
-        f"Query: {query}"
-    )
-    try:
-        response = call_llm(system_prompt=system_prompt, user_prompt=user_prompt, config=conf)
-        return _parse_llm_expansion_payload(response)
-    except Exception:
-        return [], [], []
-
-
-def _llm_structured_query_expansion_batch(
-    queries: list[str],
-    *,
-    provider: str,
-    model: str,
-    api_base: str | None,
-    api_key: str | None,
-    timeout_seconds: int,
-    retries: int,
-    llm_config_path: str,
-    cache_enabled: bool = False,
-    cache_capacity: int = 512,
-    cache_ttl_seconds: float = 300.0,
-) -> dict[str, tuple[list[str], list[str], list[str]]]:
-    # Lazy import keeps core CLI usable without LLM client deps.
-    from generation.llm import call_llm
-    from generation.run_rag import get_llm_config
-
-    unique_queries = [q.strip() for q in queries if q.strip()]
-    if not unique_queries:
-        return {}
-
-    conf = get_llm_config(provider=provider, model=model or None, config_path=llm_config_path)
-    if api_base:
-        conf.api_base = api_base
-    if api_key:
-        conf.api_key = api_key
-    conf.max_tokens = 2000
-    conf.temperature = 0.2
-    conf.top_p = 1.0
-    conf.timeout_seconds = max(1, timeout_seconds)
-    conf.retries = max(0, retries)
-    conf.cache_enabled = cache_enabled
-    conf.cache_capacity = max(1, cache_capacity)
-    conf.cache_ttl_seconds = max(0.1, cache_ttl_seconds)
-
-    system_prompt = (
-        "Generate retrieval queries that maximize document coverage. "
-        "Return strict JSON only. "
-        "Top-level key: expansions, value is an array. "
-        "Each item must be {query, paraphrases, decompositions, concept_expansions}."
-    )
-    joined_queries = "\n".join(f"- {q}" for q in unique_queries)
-    user_prompt = (
-        "Generate retrieval queries that maximize document coverage.\n\n"
-        "For EACH query below return:\n"
-        "1 paraphrases\n"
-        "3 decompositions\n"
-        "3 concept-expansion queries\n\n"
-        "Queries:\n"
-        f"{joined_queries}"
-    )
-    try:
-        response = call_llm(system_prompt=system_prompt, user_prompt=user_prompt, config=conf)
-        text = _strip_markdown_code_fences(response)
-        payload = json.loads(text)
-    except Exception:
-        return {}
-
-    result: dict[str, tuple[list[str], list[str], list[str]]] = {}
-    for item in payload.get("expansions", []):
-        query = str(item.get("query", "")).strip()
-        if not query:
-            continue
-        paraphrases = _dedupe_query_variants([str(x).strip() for x in item.get("paraphrases", [])])
-        decompositions = _dedupe_query_variants([str(x).strip() for x in item.get("decompositions", [])])
-        concepts = _dedupe_query_variants([str(x).strip() for x in item.get("concept_expansions", [])])
-        result[query] = (paraphrases, decompositions, concepts)
-    return result
-
-
-def _build_query_variants(
-    query: str,
-    max_variants: int,
-    *,
-    use_llm_structured_expansion: bool = False,
-    llm_provider: str = "qwen",
-    llm_model: str = "qwen-plus",
-    llm_api_base: str | None = None,
-    llm_api_key: str | None = None,
-    llm_timeout_seconds: int = 8,
-    llm_retries: int = 0,
-    llm_config_path: str = DEFAULT_LLM_CONFIG_PATH,
-    llm_cache_enabled: bool = False,
-    llm_cache_capacity: int = 512,
-    llm_cache_ttl_seconds: float = 300.0,
-    llm_precomputed: tuple[list[str], list[str], list[str]] | None = None,
-) -> list[str]:
-    variants, _ = _build_query_variants_with_debug(
-        query=query,
-        max_variants=max_variants,
-        use_llm_structured_expansion=use_llm_structured_expansion,
-        llm_provider=llm_provider,
-        llm_model=llm_model,
-        llm_api_base=llm_api_base,
-        llm_api_key=llm_api_key,
-        llm_timeout_seconds=llm_timeout_seconds,
-        llm_retries=llm_retries,
-        llm_config_path=llm_config_path,
-        llm_cache_enabled=llm_cache_enabled,
-        llm_cache_capacity=llm_cache_capacity,
-        llm_cache_ttl_seconds=llm_cache_ttl_seconds,
-        llm_precomputed=llm_precomputed,
-    )
-    return variants
-
-
-def _build_query_variants_with_debug(
-    *,
-    query: str,
-    max_variants: int,
-    use_llm_structured_expansion: bool = False,
-    llm_provider: str = "qwen",
-    llm_model: str = "qwen-plus",
-    llm_api_base: str | None = None,
-    llm_api_key: str | None = None,
-    llm_timeout_seconds: int = 8,
-    llm_retries: int = 0,
-    llm_config_path: str = DEFAULT_LLM_CONFIG_PATH,
-    llm_cache_enabled: bool = False,
-    llm_cache_capacity: int = 512,
-    llm_cache_ttl_seconds: float = 300.0,
-    llm_precomputed: tuple[list[str], list[str], list[str]] | None = None,
-) -> tuple[list[str], dict[str, object]]:
-    base = query.strip()
-    if not base or max_variants <= 1:
-        variants = [base] if base else []
-        return variants, {
-            "llm_requested": False,
-            "llm_generated_count": 0,
-            "llm_generated_preview": [],
-            "fallback_used": False,
-        }
-
-    paraphrase = _paraphrase_variants(base)
-    decomposition = _decomposition_variants(base)
-    entity_concepts = _entity_concept_variants(base)
-    llm_generated_preview: list[str] = []
-    llm_generated_count = 0
-    fallback_used = False
-    if use_llm_structured_expansion:
-        if llm_precomputed is not None:
-            llm_paraphrase, llm_decomposition, llm_concepts = llm_precomputed
-        else:
-            llm_paraphrase, llm_decomposition, llm_concepts = _llm_structured_query_expansion(
-                base,
-                provider=llm_provider,
-                model=llm_model,
-                api_base=llm_api_base,
-                api_key=llm_api_key,
-                timeout_seconds=llm_timeout_seconds,
-                retries=llm_retries,
-                llm_config_path=llm_config_path,
-                cache_enabled=llm_cache_enabled,
-                cache_capacity=llm_cache_capacity,
-                cache_ttl_seconds=llm_cache_ttl_seconds,
-            )
-        llm_generated = _dedupe_query_variants(llm_paraphrase + llm_decomposition + llm_concepts)
-        llm_generated_preview = llm_generated[:3]
-        llm_generated_count = len(llm_generated)
-        fallback_used = llm_generated_count == 0
-        paraphrase = _dedupe_query_variants(llm_paraphrase + paraphrase)
-        decomposition = _dedupe_query_variants(llm_decomposition + decomposition)
-        entity_concepts = _dedupe_query_variants(llm_concepts + entity_concepts)
-
-    variants: list[str] = [base]
-    layer_lists = [paraphrase, decomposition, entity_concepts]
-    layer_index = 0
-    while len(variants) < max_variants and any(layer_lists):
-        layer = layer_lists[layer_index % len(layer_lists)]
-        if layer:
-            variants.append(layer.pop(0))
-        layer_index += 1
-        if layer_index > (max_variants * 6):
-            break
-    final_variants = _dedupe_query_variants(variants)[:max_variants]
-    return final_variants, {
-        "llm_requested": use_llm_structured_expansion,
-        "llm_generated_count": llm_generated_count,
-        "llm_generated_preview": llm_generated_preview,
-        "fallback_used": fallback_used,
-    }
+DEFAULT_CLI_PARAMS_CONFIG = "cli.defaults.json"
+REQUIRED_COMMAND_PARAMS: dict[str, tuple[str, ...]] = {
+    "run_rag": ("question",),
+    "run_experiments": ("question",),
+}
 
 
 def _rrf_fuse_doc_ids(ranked_lists: list[list[str]], top_k: int, rrf_k: int = 60) -> list[str]:
@@ -551,14 +214,6 @@ def _inject_bm25_tail_candidates(
     if not rescued:
         return merged_doc_ids
     return merged_doc_ids + rescued
-
-
-def _strip_markdown_code_fences(raw_text: str) -> str:
-    text = raw_text.strip()
-    if text.startswith("```"):
-        lines = [line for line in text.splitlines() if not line.strip().startswith("```")]
-        return "\n".join(lines).strip()
-    return text
 
 
 def _interleave_doc_ids(primary: list[str], secondary: list[str], limit: int) -> list[str]:
@@ -1026,7 +681,7 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
     failure_bucket_source_counts: dict[str, Counter[str]] = {}
     llm_expansion_cache: dict[str, tuple[list[str], list[str], list[str]]] = {}
     if args.multi_query and args.multi_query_llm_expansion:
-        llm_expansion_cache = _llm_structured_query_expansion_batch(
+        llm_expansion_cache = llm_structured_query_expansion_batch(
             [sample.query for sample in samples],
             provider=args.multi_query_llm_provider,
             model=args.multi_query_llm_model,
@@ -1079,7 +734,7 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                 bm25_branch_doc_ids = [item.doc_id for item in bm25_hits]
                 bm25_score_map = {item.doc_id: float(item.score) for item in bm25_hits}
         if args.multi_query:
-            query_variants, llm_debug = _build_query_variants_with_debug(
+            query_variants, llm_debug = build_query_variants_with_debug(
                 query=sample.query,
                 max_variants=args.multi_query_variants,
                 use_llm_structured_expansion=args.multi_query_llm_expansion,
@@ -1690,6 +1345,11 @@ def cmd_run_experiments(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Single entrypoint for project workflows.")
+    parser.add_argument(
+        "--config",
+
+        help="Path to CLI defaults JSON (default: project root cli.defaults.json).",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     build_parser_cmd = subparsers.add_parser(
@@ -1697,38 +1357,38 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["build-parser"],
         help="Run parser pipeline and build rag_dataset.jsonl",
     )
-    build_parser_cmd.add_argument("--output", default="data/rag_dataset.jsonl")
-    build_parser_cmd.add_argument("--min-tokens", type=int, default=300)
-    build_parser_cmd.add_argument("--max-tokens", type=int, default=800)
-    build_parser_cmd.add_argument("--overlap-ratio", type=float, default=0.15)
-    build_parser_cmd.add_argument("--min-output-chunk-tokens", type=int, default=120)
-    build_parser_cmd.add_argument("--max-output-chunk-tokens", type=int, default=650)
-    build_parser_cmd.add_argument("--max-chunks-per-url", type=int, default=12)
-    build_parser_cmd.add_argument("--max-chunks-per-category", type=int, default=45)
-    build_parser_cmd.add_argument("--sources-config", default=DEFAULT_SOURCES_CONFIG_PATH)
-    build_parser_cmd.add_argument("--chunker-mode", choices=("token", "semantic_dynamic"), default="token")
+    build_parser_cmd.add_argument("--output",)
+    build_parser_cmd.add_argument("--min-tokens", type=int,)
+    build_parser_cmd.add_argument("--max-tokens", type=int,)
+    build_parser_cmd.add_argument("--overlap-ratio", type=float,)
+    build_parser_cmd.add_argument("--min-output-chunk-tokens", type=int,)
+    build_parser_cmd.add_argument("--max-output-chunk-tokens", type=int,)
+    build_parser_cmd.add_argument("--max-chunks-per-url", type=int,)
+    build_parser_cmd.add_argument("--max-chunks-per-category", type=int,)
+    build_parser_cmd.add_argument("--sources-config",)
+    build_parser_cmd.add_argument("--chunker-mode", choices=("token", "semantic_dynamic"),)
     build_parser_cmd.add_argument(
         "--near-duplicate-jaccard",
         type=float,
-        default=0.0,
+
         help="Skip near-duplicate chunks from the same URL when similarity >= threshold (0 disables).",
     )
-    build_parser_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
-    build_parser_cmd.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
-    build_parser_cmd.add_argument("--log-path", default=None)
+    build_parser_cmd.add_argument("--embedding-model",)
+    build_parser_cmd.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+    build_parser_cmd.add_argument("--log-path",)
     build_parser_cmd.add_argument("--log-json", action="store_true")
     build_parser_cmd.set_defaults(handler=cmd_build_parser)
 
     demo_cmd = subparsers.add_parser("demo_retrieval", help="Run BM25/semantic/hybrid retrieval demo.")
-    demo_cmd.add_argument("--query", "-q", default="database caching performance")
-    demo_cmd.add_argument("--top-k", "-k", type=int, default=4)
-    demo_cmd.add_argument("--model", "-m", default=DEFAULT_EMBEDDING_MODEL)
-    demo_cmd.add_argument("--dataset", default="data/rag_dataset.jsonl")
-    demo_cmd.add_argument("--faiss-path", default="data/faiss")
-    demo_cmd.add_argument("--index", default=".")
+    demo_cmd.add_argument("--query", "-q",)
+    demo_cmd.add_argument("--top-k", "-k", type=int,)
+    demo_cmd.add_argument("--model", "-m",)
+    demo_cmd.add_argument("--dataset",)
+    demo_cmd.add_argument("--faiss-path",)
+    demo_cmd.add_argument("--index",)
     demo_cmd.add_argument("--rerank", action="store_true")
-    demo_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
-    demo_cmd.add_argument("--rerank-candidates", type=int, default=20)
+    demo_cmd.add_argument("--reranker-model",)
+    demo_cmd.add_argument("--rerank-candidates", type=int,)
     demo_cmd.set_defaults(handler=cmd_demo_retrieval)
 
     eval_cmd = subparsers.add_parser(
@@ -1736,52 +1396,52 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["evaluate"],
         help="Run retrieval benchmark over eval dataset.",
     )
-    eval_cmd.add_argument("--dataset", default="data/evaluation_with_evidence.jsonl")
-    eval_cmd.add_argument("--retriever", choices=("semantic", "bm25", "hybrid"), default="semantic")
-    eval_cmd.add_argument("--k-values", default="1,3,5")
-    eval_cmd.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
-    eval_cmd.add_argument("--faiss-path", default="data/faiss")
-    eval_cmd.add_argument("--index", default=".")
-    eval_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
-    eval_cmd.add_argument("--alpha", type=float, default=0.7)
+    eval_cmd.add_argument("--dataset",)
+    eval_cmd.add_argument("--retriever", choices=("semantic", "bm25", "hybrid"),)
+    eval_cmd.add_argument("--k-values",)
+    eval_cmd.add_argument("--rag-dataset",)
+    eval_cmd.add_argument("--faiss-path",)
+    eval_cmd.add_argument("--index",)
+    eval_cmd.add_argument("--embedding-model",)
+    eval_cmd.add_argument("--alpha", type=float,)
     eval_cmd.add_argument(
         "--hybrid-candidate-multiplier",
         type=int,
-        default=2,
+
         help="Hybrid per-branch candidate pool multiplier before merge/rerank.",
     )
     eval_cmd.add_argument(
         "--hybrid-max-per-group",
         type=int,
-        default=1,
+
         help="Max documents per source/section group in hybrid top-k (<=0 disables).",
     )
     eval_cmd.add_argument(
         "--hybrid-rrf-k",
         type=float,
-        default=60.0,
+
         help="RRF k parameter used to fuse semantic and BM25 ranks.",
     )
     eval_cmd.add_argument("--rerank", action="store_true")
-    eval_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
-    eval_cmd.add_argument("--rerank-candidates", type=int, default=20)
-    eval_cmd.add_argument("--rerank-alpha", type=float, default=0.75)
+    eval_cmd.add_argument("--reranker-model",)
+    eval_cmd.add_argument("--rerank-candidates", type=int,)
+    eval_cmd.add_argument("--rerank-alpha", type=float,)
     eval_cmd.add_argument(
         "--rerank-top1-margin-lambda",
         type=float,
-        default=0.0,
+
         help="Post-process top-1 score with lambda * (top1 - top2).",
     )
     eval_cmd.add_argument(
         "--ce-calibration",
         choices=("minmax", "softmax", "zscore"),
-        default="minmax",
+
         help="How to normalize CE scores per query before fusion with prior scores.",
     )
     eval_cmd.add_argument(
         "--ce-temperature",
         type=float,
-        default=1.0,
+
         help="Temperature for CE calibration modes (softmax/zscore). >1 flattens scores.",
     )
     eval_cmd.add_argument(
@@ -1792,11 +1452,11 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument(
         "--hard-negative-semantic-floor",
         type=float,
-        default=0.0,
+
         help="Drop rerank candidates with normalized semantic score below threshold.",
     )
-    eval_cmd.add_argument("--rerank-semantic-weight", type=float, default=0.55)
-    eval_cmd.add_argument("--rerank-bm25-weight", type=float, default=0.45)
+    eval_cmd.add_argument("--rerank-semantic-weight", type=float,)
+    eval_cmd.add_argument("--rerank-bm25-weight", type=float,)
     eval_cmd.add_argument(
         "--two-stage-rerank",
         action="store_true",
@@ -1805,41 +1465,41 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument(
         "--prefilter-candidates",
         type=int,
-        default=40,
+
         help="How many candidates to keep for stage-2 cross-encoder reranking.",
     )
     eval_cmd.add_argument("--multi-query", action="store_true")
-    eval_cmd.add_argument("--multi-query-variants", type=int, default=3)
-    eval_cmd.add_argument("--multi-query-rrf-k", type=int, default=60)
+    eval_cmd.add_argument("--multi-query-variants", type=int,)
+    eval_cmd.add_argument("--multi-query-rrf-k", type=int,)
     eval_cmd.add_argument(
         "--multi-query-llm-expansion",
         action="store_true",
         help="Use LLM-based structured expansion (paraphrase + decomposition + concept queries).",
     )
-    eval_cmd.add_argument("--multi-query-llm-provider", default="qwen")
-    eval_cmd.add_argument("--multi-query-llm-model", default="qwen-plus")
-    eval_cmd.add_argument("--multi-query-llm-api-base", default=None)
-    eval_cmd.add_argument("--multi-query-llm-api-key", default=None)
-    eval_cmd.add_argument("--multi-query-llm-timeout-seconds", type=int, default=8)
-    eval_cmd.add_argument("--multi-query-llm-retries", type=int, default=0)
-    eval_cmd.add_argument("--llm-config-path", default=DEFAULT_LLM_CONFIG_PATH)
+    eval_cmd.add_argument("--multi-query-llm-provider",)
+    eval_cmd.add_argument("--multi-query-llm-model",)
+    eval_cmd.add_argument("--multi-query-llm-api-base",)
+    eval_cmd.add_argument("--multi-query-llm-api-key",)
+    eval_cmd.add_argument("--multi-query-llm-timeout-seconds", type=int,)
+    eval_cmd.add_argument("--multi-query-llm-retries", type=int,)
+    eval_cmd.add_argument("--llm-config-path",)
     eval_cmd.add_argument("--multi-query-llm-debug", action="store_true")
     eval_cmd.add_argument(
         "--retrieval-cache-enabled",
         action="store_true",
         help="Enable in-memory cache for retrieval query results.",
     )
-    eval_cmd.add_argument("--retrieval-cache-capacity", type=int, default=10000)
-    eval_cmd.add_argument("--retrieval-cache-ttl-seconds", type=float, default=300.0)
+    eval_cmd.add_argument("--retrieval-cache-capacity", type=int,)
+    eval_cmd.add_argument("--retrieval-cache-ttl-seconds", type=float,)
     eval_cmd.add_argument(
         "--llm-cache-enabled",
         action="store_true",
         help="Enable in-memory cache for LLM calls (query expansion / generation).",
     )
-    eval_cmd.add_argument("--llm-cache-capacity", type=int, default=512)
-    eval_cmd.add_argument("--llm-cache-ttl-seconds", type=float, default=300.0)
-    eval_cmd.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
-    eval_cmd.add_argument("--log-path", default=None, help="Optional runtime log file path.")
+    eval_cmd.add_argument("--llm-cache-capacity", type=int,)
+    eval_cmd.add_argument("--llm-cache-ttl-seconds", type=float,)
+    eval_cmd.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+    eval_cmd.add_argument("--log-path", help="Optional runtime log file path.")
     eval_cmd.add_argument("--log-json", action="store_true", help="Emit runtime logs in JSON format.")
     eval_cmd.add_argument(
         "--soft-recall-rescue",
@@ -1849,13 +1509,13 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument(
         "--soft-recall-rescue-tail-k",
         type=int,
-        default=30,
+
         help="How many BM25-only candidates to inject into reranker pool.",
     )
     eval_cmd.add_argument(
         "--soft-recall-rescue-bm25-depth",
         type=int,
-        default=200,
+
         help="How deep to search BM25 before extracting BM25-only tail candidates.",
     )
     eval_cmd.add_argument(
@@ -1863,17 +1523,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Apply MMR diversity selection after fusion/rescue and before CE reranking.",
     )
-    eval_cmd.add_argument("--mmr-lambda", type=float, default=0.75)
+    eval_cmd.add_argument("--mmr-lambda", type=float,)
     eval_cmd.add_argument(
         "--mmr-k",
         type=int,
-        default=40,
+
         help="Candidate pool size kept after MMR (<=0 uses rerank candidate size).",
     )
     eval_cmd.add_argument(
         "--mmr-diversity-threshold",
         type=float,
-        default=0.0,
+
         help="Optional hard max cosine similarity to selected docs (<=0 disables).",
     )
     eval_cmd.add_argument(
@@ -1884,89 +1544,89 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument(
         "--failure-near-miss-threshold",
         type=float,
-        default=0.80,
+
         help="Similarity threshold used to classify failures as near_miss.",
     )
     eval_cmd.add_argument(
         "--failure-sample-size",
         type=int,
-        default=20,
+
         help="Number of failed queries to include for manual inspection.",
     )
     eval_cmd.add_argument(
         "--export-reranker-train-jsonl",
-        default=None,
+
         help="Optional path to export pairwise hard-negative reranker training dataset.",
     )
-    eval_cmd.add_argument("--reranker-train-max-negative-rank", type=int, default=20)
-    eval_cmd.add_argument("--reranker-train-max-negatives", type=int, default=16)
-    eval_cmd.add_argument("--reranker-train-weight-ranking-cutoff", type=float, default=2.0)
-    eval_cmd.add_argument("--reranker-train-weight-true-recall", type=float, default=0.3)
-    eval_cmd.add_argument("--reranker-train-weight-default", type=float, default=1.0)
+    eval_cmd.add_argument("--reranker-train-max-negative-rank", type=int,)
+    eval_cmd.add_argument("--reranker-train-max-negatives", type=int,)
+    eval_cmd.add_argument("--reranker-train-weight-ranking-cutoff", type=float,)
+    eval_cmd.add_argument("--reranker-train-weight-true-recall", type=float,)
+    eval_cmd.add_argument("--reranker-train-weight-default", type=float,)
     eval_cmd.add_argument(
         "--train-reranker",
         action="store_true",
         help="Train reranker in the same run after exporting hard-negative dataset.",
     )
-    eval_cmd.add_argument("--train-reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
-    eval_cmd.add_argument("--train-reranker-out-dir", default="artifacts/models/reranker-failure-driven")
-    eval_cmd.add_argument("--train-reranker-epochs", type=int, default=2)
-    eval_cmd.add_argument("--train-reranker-batch-size", type=int, default=16)
-    eval_cmd.add_argument("--train-reranker-warmup-steps", type=int, default=100)
-    eval_cmd.add_argument("--train-reranker-val-ratio", type=float, default=0.1)
-    eval_cmd.add_argument("--train-reranker-seed", type=int, default=42)
-    eval_cmd.add_argument("--out-json", default=None)
+    eval_cmd.add_argument("--train-reranker-model",)
+    eval_cmd.add_argument("--train-reranker-out-dir",)
+    eval_cmd.add_argument("--train-reranker-epochs", type=int,)
+    eval_cmd.add_argument("--train-reranker-batch-size", type=int,)
+    eval_cmd.add_argument("--train-reranker-warmup-steps", type=int,)
+    eval_cmd.add_argument("--train-reranker-val-ratio", type=float,)
+    eval_cmd.add_argument("--train-reranker-seed", type=int,)
+    eval_cmd.add_argument("--out-json",)
     eval_cmd.set_defaults(handler=cmd_evaluation_runner)
 
     rerank_pipeline_cmd = subparsers.add_parser(
         "reranker_pipeline",
         help="One-shot eval + failure dataset export + optional reranker training.",
     )
-    rerank_pipeline_cmd.add_argument("--dataset", default="data/evaluation_with_evidence.jsonl")
-    rerank_pipeline_cmd.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
-    rerank_pipeline_cmd.add_argument("--faiss-path", default="data/faiss")
-    rerank_pipeline_cmd.add_argument("--index", default=".")
-    rerank_pipeline_cmd.add_argument("--embedding-model", default="intfloat/e5-base-v2")
-    rerank_pipeline_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    rerank_pipeline_cmd.add_argument("--dataset",)
+    rerank_pipeline_cmd.add_argument("--rag-dataset",)
+    rerank_pipeline_cmd.add_argument("--faiss-path",)
+    rerank_pipeline_cmd.add_argument("--index",)
+    rerank_pipeline_cmd.add_argument("--embedding-model",)
+    rerank_pipeline_cmd.add_argument("--reranker-model",)
     rerank_pipeline_cmd.add_argument(
         "--rerank-top1-margin-lambda",
         type=float,
-        default=0.0,
+
         help="Post-process top-1 score with lambda * (top1 - top2).",
     )
-    rerank_pipeline_cmd.add_argument("--k-values", default="1,10,20")
+    rerank_pipeline_cmd.add_argument("--k-values",)
     rerank_pipeline_cmd.add_argument("--multi-query-llm-expansion", action="store_true")
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-provider", default="qwen")
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-model", default="qwen-plus")
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-api-base", default=None)
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-api-key", default=None)
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-timeout-seconds", type=int, default=8)
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-retries", type=int, default=0)
-    rerank_pipeline_cmd.add_argument("--llm-config-path", default=DEFAULT_LLM_CONFIG_PATH)
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-provider",)
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-model",)
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-api-base",)
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-api-key",)
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-timeout-seconds", type=int,)
+    rerank_pipeline_cmd.add_argument("--multi-query-llm-retries", type=int,)
+    rerank_pipeline_cmd.add_argument("--llm-config-path",)
     rerank_pipeline_cmd.add_argument("--multi-query-llm-debug", action="store_true")
     rerank_pipeline_cmd.add_argument("--retrieval-cache-enabled", action="store_true")
-    rerank_pipeline_cmd.add_argument("--retrieval-cache-capacity", type=int, default=10000)
-    rerank_pipeline_cmd.add_argument("--retrieval-cache-ttl-seconds", type=float, default=300.0)
+    rerank_pipeline_cmd.add_argument("--retrieval-cache-capacity", type=int,)
+    rerank_pipeline_cmd.add_argument("--retrieval-cache-ttl-seconds", type=float,)
     rerank_pipeline_cmd.add_argument("--llm-cache-enabled", action="store_true")
-    rerank_pipeline_cmd.add_argument("--llm-cache-capacity", type=int, default=512)
-    rerank_pipeline_cmd.add_argument("--llm-cache-ttl-seconds", type=float, default=300.0)
-    rerank_pipeline_cmd.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
-    rerank_pipeline_cmd.add_argument("--log-path", default=None)
+    rerank_pipeline_cmd.add_argument("--llm-cache-capacity", type=int,)
+    rerank_pipeline_cmd.add_argument("--llm-cache-ttl-seconds", type=float,)
+    rerank_pipeline_cmd.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+    rerank_pipeline_cmd.add_argument("--log-path",)
     rerank_pipeline_cmd.add_argument("--log-json", action="store_true")
-    rerank_pipeline_cmd.add_argument("--out-json", default="experiments/results/retrieval_report_best.json")
+    rerank_pipeline_cmd.add_argument("--out-json",)
     rerank_pipeline_cmd.add_argument(
         "--export-reranker-train-jsonl",
-        default="artifacts/datasets/reranker_train.jsonl",
+
         help="Path for exported reranker pairwise training dataset.",
     )
     rerank_pipeline_cmd.add_argument("--train-reranker", action="store_true")
-    rerank_pipeline_cmd.add_argument("--train-reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
-    rerank_pipeline_cmd.add_argument("--train-reranker-out-dir", default="artifacts/models/reranker-failure-driven")
-    rerank_pipeline_cmd.add_argument("--train-reranker-epochs", type=int, default=2)
-    rerank_pipeline_cmd.add_argument("--train-reranker-batch-size", type=int, default=16)
-    rerank_pipeline_cmd.add_argument("--train-reranker-warmup-steps", type=int, default=100)
-    rerank_pipeline_cmd.add_argument("--train-reranker-val-ratio", type=float, default=0.1)
-    rerank_pipeline_cmd.add_argument("--train-reranker-seed", type=int, default=42)
+    rerank_pipeline_cmd.add_argument("--train-reranker-model",)
+    rerank_pipeline_cmd.add_argument("--train-reranker-out-dir",)
+    rerank_pipeline_cmd.add_argument("--train-reranker-epochs", type=int,)
+    rerank_pipeline_cmd.add_argument("--train-reranker-batch-size", type=int,)
+    rerank_pipeline_cmd.add_argument("--train-reranker-warmup-steps", type=int,)
+    rerank_pipeline_cmd.add_argument("--train-reranker-val-ratio", type=float,)
+    rerank_pipeline_cmd.add_argument("--train-reranker-seed", type=int,)
     rerank_pipeline_cmd.set_defaults(handler=cmd_reranker_pipeline)
 
     rag_cmd = subparsers.add_parser(
@@ -1974,33 +1634,33 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["run-rag"],
         help="Run full RAG query against selected LLM provider.",
     )
-    rag_cmd.add_argument("--question", "-q", required=True)
-    rag_cmd.add_argument("--provider", default="openai", choices=("openai", "gigachat", "ollama", "qwen"))
-    rag_cmd.add_argument("--model", default=None)
-    rag_cmd.add_argument("--top-k", type=int, default=5)
-    rag_cmd.add_argument("--max-context-tokens", type=int, default=2500)
-    rag_cmd.add_argument("--faiss-path", default="data/faiss")
-    rag_cmd.add_argument("--index", default=".")
-    rag_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
+    rag_cmd.add_argument("--question", "-q",)
+    rag_cmd.add_argument("--provider", choices=("openai", "gigachat", "ollama", "qwen"))
+    rag_cmd.add_argument("--model",)
+    rag_cmd.add_argument("--top-k", type=int,)
+    rag_cmd.add_argument("--max-context-tokens", type=int,)
+    rag_cmd.add_argument("--faiss-path",)
+    rag_cmd.add_argument("--index",)
+    rag_cmd.add_argument("--embedding-model",)
     rag_cmd.add_argument("--stream", action="store_true")
-    rag_cmd.add_argument("--max-tokens", type=int, default=512)
-    rag_cmd.add_argument("--temperature", type=float, default=0.1)
-    rag_cmd.add_argument("--top-p", type=float, default=0.95)
+    rag_cmd.add_argument("--max-tokens", type=int,)
+    rag_cmd.add_argument("--temperature", type=float,)
+    rag_cmd.add_argument("--top-p", type=float,)
     rag_cmd.add_argument("--rerank", action="store_true")
-    rag_cmd.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
-    rag_cmd.add_argument("--rerank-candidates", type=int, default=20)
+    rag_cmd.add_argument("--reranker-model",)
+    rag_cmd.add_argument("--rerank-candidates", type=int,)
     rag_cmd.add_argument("--llm-cache-enabled", action="store_true")
-    rag_cmd.add_argument("--llm-cache-capacity", type=int, default=512)
-    rag_cmd.add_argument("--llm-cache-ttl-seconds", type=float, default=300.0)
-    rag_cmd.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
-    rag_cmd.add_argument("--log-path", default="data/last_run.log", help="Optional runtime log file path.")
+    rag_cmd.add_argument("--llm-cache-capacity", type=int,)
+    rag_cmd.add_argument("--llm-cache-ttl-seconds", type=float,)
+    rag_cmd.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+    rag_cmd.add_argument("--log-path", help="Optional runtime log file path.")
     rag_cmd.add_argument("--log-json", action="store_true", help="Emit runtime logs in JSON format.")
-    rag_cmd.add_argument("--llm-config-path", default=DEFAULT_LLM_CONFIG_PATH)
+    rag_cmd.add_argument("--llm-config-path",)
     rag_cmd.set_defaults(handler=cmd_run_rag)
 
     clean_cmd = subparsers.add_parser("cleanup_faiss", help="Delete FAISS index and optionally full directory.")
-    clean_cmd.add_argument("--faiss-path", default="data/faiss")
-    clean_cmd.add_argument("--index", default=".")
+    clean_cmd.add_argument("--faiss-path",)
+    clean_cmd.add_argument("--index",)
     clean_cmd.add_argument("--drop-persist-directory", action="store_true")
     clean_cmd.set_defaults(handler=cmd_cleanup_faiss)
 
@@ -2011,7 +1671,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_faiss_cmd.add_argument(
         "--input-jsonl",
-        default="data/embeddings_input.jsonl",
+
         help="Embeddings input JSONL with id/text records.",
     )
     build_faiss_cmd.add_argument(
@@ -2021,12 +1681,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_faiss_cmd.add_argument(
         "--rag-dataset",
-        default="data/rag_dataset.jsonl",
+
         help="RAG dataset used when --prepare-input is enabled.",
     )
-    build_faiss_cmd.add_argument("--faiss-path", default="data/faiss")
-    build_faiss_cmd.add_argument("--index", default=".")
-    build_faiss_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
+    build_faiss_cmd.add_argument("--faiss-path",)
+    build_faiss_cmd.add_argument("--index",)
+    build_faiss_cmd.add_argument("--embedding-model",)
     build_faiss_cmd.set_defaults(handler=cmd_build_faiss)
 
     build_eval_cmd = subparsers.add_parser(
@@ -2034,19 +1694,19 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["build-eval-dataset"],
         help="Build structured evaluation JSONL from eval JSON and rag dataset.",
     )
-    build_eval_cmd.add_argument("--rag", default="data/rag_dataset.jsonl")
-    build_eval_cmd.add_argument("--eval", default="evaluation/evaluation.json")
-    build_eval_cmd.add_argument("--out", default="data/evaluation_with_evidence.jsonl")
-    build_eval_cmd.add_argument("--fuzzy-ratio", type=float, default=0.86)
-    build_eval_cmd.add_argument("--lexical-min-hits", type=int, default=2)
-    build_eval_cmd.add_argument("--max-chunk-ids", type=int, default=2)
+    build_eval_cmd.add_argument("--rag",)
+    build_eval_cmd.add_argument("--eval",)
+    build_eval_cmd.add_argument("--out",)
+    build_eval_cmd.add_argument("--fuzzy-ratio", type=float,)
+    build_eval_cmd.add_argument("--lexical-min-hits", type=int,)
+    build_eval_cmd.add_argument("--max-chunk-ids", type=int,)
     build_eval_cmd.add_argument("--no-semantic-fallback", action="store_true")
-    build_eval_cmd.add_argument("--semantic-model", default=DEFAULT_EMBEDDING_MODEL)
-    build_eval_cmd.add_argument("--semantic-min-score", type=float, default=0.56)
-    build_eval_cmd.add_argument("--max-gt-url-share", type=float, default=0.25)
-    build_eval_cmd.add_argument("--target-multi-gt-share", type=float, default=0.4)
-    build_eval_cmd.add_argument("--keep-max-ids-for-multi", type=int, default=1)
-    build_eval_cmd.add_argument("--excerpt-max", type=int, default=320)
+    build_eval_cmd.add_argument("--semantic-model",)
+    build_eval_cmd.add_argument("--semantic-min-score", type=float,)
+    build_eval_cmd.add_argument("--max-gt-url-share", type=float,)
+    build_eval_cmd.add_argument("--target-multi-gt-share", type=float,)
+    build_eval_cmd.add_argument("--keep-max-ids-for-multi", type=int,)
+    build_eval_cmd.add_argument("--excerpt-max", type=int,)
     build_eval_cmd.set_defaults(handler=cmd_build_evaluation_dataset)
 
     audit_cmd = subparsers.add_parser(
@@ -2054,9 +1714,9 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["audit-dataset"],
         help="Audit rag/evaluation datasets and print quality report.",
     )
-    audit_cmd.add_argument("--rag", default="data/rag_dataset.jsonl")
-    audit_cmd.add_argument("--eval", default="data/evaluation_with_evidence.jsonl")
-    audit_cmd.add_argument("--out", default=None)
+    audit_cmd.add_argument("--rag",)
+    audit_cmd.add_argument("--eval",)
+    audit_cmd.add_argument("--out",)
     audit_cmd.set_defaults(handler=cmd_dataset_audit)
 
     build_reranker_ds_cmd = subparsers.add_parser(
@@ -2064,14 +1724,14 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["build-reranker-dataset"],
         help="Build context-aware reranker training JSONL from retrieval report.",
     )
-    build_reranker_ds_cmd.add_argument("--eval-report", default="experiments/results/retrieval_report_best.json")
-    build_reranker_ds_cmd.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
-    build_reranker_ds_cmd.add_argument("--out", default="artifacts/datasets/reranker_train.jsonl")
-    build_reranker_ds_cmd.add_argument("--max-negative-rank", type=int, default=20)
-    build_reranker_ds_cmd.add_argument("--max-negatives", type=int, default=16)
-    build_reranker_ds_cmd.add_argument("--ranking-cutoff-weight", type=float, default=2.0)
-    build_reranker_ds_cmd.add_argument("--true-recall-weight", type=float, default=0.3)
-    build_reranker_ds_cmd.add_argument("--default-weight", type=float, default=1.0)
+    build_reranker_ds_cmd.add_argument("--eval-report",)
+    build_reranker_ds_cmd.add_argument("--rag-dataset",)
+    build_reranker_ds_cmd.add_argument("--out",)
+    build_reranker_ds_cmd.add_argument("--max-negative-rank", type=int,)
+    build_reranker_ds_cmd.add_argument("--max-negatives", type=int,)
+    build_reranker_ds_cmd.add_argument("--ranking-cutoff-weight", type=float,)
+    build_reranker_ds_cmd.add_argument("--true-recall-weight", type=float,)
+    build_reranker_ds_cmd.add_argument("--default-weight", type=float,)
     build_reranker_ds_cmd.set_defaults(handler=cmd_build_reranker_dataset)
 
     train_reranker_cmd = subparsers.add_parser(
@@ -2079,15 +1739,15 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["train-reranker"],
         help="Fine-tune cross-encoder reranker on context dataset.",
     )
-    train_reranker_cmd.add_argument("--train-jsonl", default="artifacts/datasets/reranker_train.jsonl")
-    train_reranker_cmd.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
-    train_reranker_cmd.add_argument("--model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
-    train_reranker_cmd.add_argument("--out-dir", default="artifacts/models/reranker-failure-driven")
-    train_reranker_cmd.add_argument("--epochs", type=int, default=2)
-    train_reranker_cmd.add_argument("--batch-size", type=int, default=16)
-    train_reranker_cmd.add_argument("--warmup-steps", type=int, default=100)
-    train_reranker_cmd.add_argument("--val-ratio", type=float, default=0.1)
-    train_reranker_cmd.add_argument("--seed", type=int, default=42)
+    train_reranker_cmd.add_argument("--train-jsonl",)
+    train_reranker_cmd.add_argument("--rag-dataset",)
+    train_reranker_cmd.add_argument("--model",)
+    train_reranker_cmd.add_argument("--out-dir",)
+    train_reranker_cmd.add_argument("--epochs", type=int,)
+    train_reranker_cmd.add_argument("--batch-size", type=int,)
+    train_reranker_cmd.add_argument("--warmup-steps", type=int,)
+    train_reranker_cmd.add_argument("--val-ratio", type=float,)
+    train_reranker_cmd.add_argument("--seed", type=int,)
     train_reranker_cmd.set_defaults(handler=cmd_train_reranker)
 
     experiments_cmd = subparsers.add_parser(
@@ -2095,15 +1755,15 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["run-experiments"],
         help="Run RAG answer comparison across configured LLM providers.",
     )
-    experiments_cmd.add_argument("--question", "-q", required=True)
-    experiments_cmd.add_argument("--models", default="openai,gigachat,ollama,qwen")
-    experiments_cmd.add_argument("--top-k", type=int, default=5)
-    experiments_cmd.add_argument("--max-context-tokens", type=int, default=2500)
-    experiments_cmd.add_argument("--faiss-path", default="data/faiss")
-    experiments_cmd.add_argument("--index", default=".")
-    experiments_cmd.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
-    experiments_cmd.add_argument("--log-path", default="experiments/logs/llm_experiment_results.jsonl")
-    experiments_cmd.add_argument("--llm-config-path", default=DEFAULT_LLM_CONFIG_PATH)
+    experiments_cmd.add_argument("--question", "-q",)
+    experiments_cmd.add_argument("--models",)
+    experiments_cmd.add_argument("--top-k", type=int,)
+    experiments_cmd.add_argument("--max-context-tokens", type=int,)
+    experiments_cmd.add_argument("--faiss-path",)
+    experiments_cmd.add_argument("--index",)
+    experiments_cmd.add_argument("--embedding-model",)
+    experiments_cmd.add_argument("--log-path",)
+    experiments_cmd.add_argument("--llm-config-path",)
     experiments_cmd.set_defaults(handler=cmd_run_experiments)
 
     return parser
@@ -2112,6 +1772,16 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    config_arg = getattr(args, "config", None)
+    if config_arg:
+        config_path = Path(config_arg).expanduser()
+        if not config_path.is_absolute():
+            config_path = Path.cwd() / config_path
+    else:
+        config_path = Path.cwd() / DEFAULT_CLI_PARAMS_CONFIG
+    config_defaults = load_cli_defaults(config_path)
+    apply_config_defaults(parser, args, sys.argv[1:], config_defaults)
+    validate_required_command_params(parser, args, REQUIRED_COMMAND_PARAMS)
     args.handler(args)
 
 

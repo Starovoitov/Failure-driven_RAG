@@ -22,6 +22,8 @@ Important distinction vs `main.py run_rag`:
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
 
 from sentence_transformers import SentenceTransformer
 
@@ -32,6 +34,7 @@ from ingestion.loaders import (
 from retrieval.bm25 import BM25Document, BM25Index
 from retrieval.hybrid import hybrid_search
 from retrieval.semantic import search_semantic
+from utils.cli_config import load_script_defaults
 from utils.embedding_format import format_query_for_embedding
 
 # Same model as embeddings/embedder.py.
@@ -127,38 +130,39 @@ def run_demo(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Demo BM25 + semantic + hybrid retrieval.")
+    parser.add_argument("--config", help="Path to CLI defaults JSON.")
     parser.add_argument(
         "--query",
         "-q",
-        default="database caching performance",
+
         help="Search query text.",
     )
     parser.add_argument(
         "--top-k",
         "-k",
         type=int,
-        default=10,
+
         help="Number of hits to show per method.",
     )
     parser.add_argument(
         "--model",
         "-m",
-        default=DEFAULT_MODEL,
+
         help=f"Sentence-transformers model name (default: {DEFAULT_MODEL}).",
     )
     parser.add_argument(
         "--dataset",
-        default="data/rag_dataset.jsonl",
+
         help="Dataset JSONL created by parser pipeline.",
     )
     parser.add_argument(
         "--faiss-path",
-        default="data/faiss",
+
         help="Persistent FAISS directory containing chunk embeddings.",
     )
     parser.add_argument(
         "--index",
-        default=".",
+
         help="FAISS index name with precomputed embeddings.",
     )
     parser.add_argument(
@@ -168,15 +172,22 @@ def main() -> None:
     )
     parser.add_argument(
         "--reranker-model",
-        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
+
         help="Cross-encoder model name used when --rerank is enabled.",
     )
     parser.add_argument(
         "--rerank-candidates",
         type=int,
-        default=20,
+
         help="How many hybrid candidates to rerank before trimming to top-k.",
     )
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config")
+    pre_args, _ = pre_parser.parse_known_args(sys.argv[1:])
+    config_path = Path(pre_args.config).expanduser() if pre_args.config else (Path.cwd() / "cli.defaults.json")
+    if not config_path.is_absolute():
+        config_path = Path.cwd() / config_path
+    parser.set_defaults(**load_script_defaults(config_path, "demo_retrieval"))
     args = parser.parse_args()
     run_demo(
         query=args.query,

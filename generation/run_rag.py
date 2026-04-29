@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
 
 from sentence_transformers import SentenceTransformer
 
@@ -10,6 +12,7 @@ from generation.llm import LLMConfig, call_llm, stream_llm
 from generation.prompt import SourceChunk, build_rag_messages
 from ingestion.loaders import load_semantic_documents_from_faiss
 from retrieval.semantic import search_semantic
+from utils.cli_config import load_script_defaults
 from utils.embedding_format import format_query_for_embedding
 from utils.logger import configure_runtime_logger
 
@@ -213,36 +216,46 @@ def run_rag(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a single RAG query against one LLM provider.")
-    parser.add_argument("--question", "-q", required=True, help="Question to ask.")
+    parser.add_argument("--config", help="Path to CLI defaults JSON.")
+    parser.add_argument("--question", "-q", help="Question to ask.")
     known_providers = _load_known_providers_safe(DEFAULT_LLM_CONFIG_PATH)
     parser.add_argument(
         "--provider",
-        default=known_providers[0],
+
         choices=known_providers,
         help="LLM provider config to use.",
     )
-    parser.add_argument("--model", default=None, help="Override provider default model.")
-    parser.add_argument("--top-k", type=int, default=5)
-    parser.add_argument("--max-context-tokens", type=int, default=2500)
-    parser.add_argument("--faiss-path", default="data/faiss")
-    parser.add_argument("--index", default=".")
-    parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
+    parser.add_argument("--model", help="Override provider default model.")
+    parser.add_argument("--top-k", type=int,)
+    parser.add_argument("--max-context-tokens", type=int,)
+    parser.add_argument("--faiss-path",)
+    parser.add_argument("--index",)
+    parser.add_argument("--embedding-model",)
     parser.add_argument("--stream", action="store_true", help="Stream answer tokens.")
-    parser.add_argument("--max-tokens", type=int, default=512)
-    parser.add_argument("--temperature", type=float, default=0.1)
-    parser.add_argument("--top-p", type=float, default=0.95)
+    parser.add_argument("--max-tokens", type=int,)
+    parser.add_argument("--temperature", type=float,)
+    parser.add_argument("--top-p", type=float,)
     parser.add_argument("--rerank", action="store_true", help="Apply cross-encoder reranking.")
-    parser.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
-    parser.add_argument("--rerank-candidates", type=int, default=20)
+    parser.add_argument("--reranker-model",)
+    parser.add_argument("--rerank-candidates", type=int,)
     parser.add_argument("--llm-cache-enabled", action="store_true", help="Enable in-memory LLM response cache.")
-    parser.add_argument("--llm-cache-capacity", type=int, default=512)
-    parser.add_argument("--llm-cache-ttl-seconds", type=float, default=300.0)
-    parser.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
-    parser.add_argument("--log-path", default=None, help="Optional runtime log file path.")
+    parser.add_argument("--llm-cache-capacity", type=int,)
+    parser.add_argument("--llm-cache-ttl-seconds", type=float,)
+    parser.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
+    parser.add_argument("--log-path", help="Optional runtime log file path.")
     parser.add_argument("--log-json", action="store_true", help="Emit runtime logs in JSON format.")
-    parser.add_argument("--llm-config-path", default=DEFAULT_LLM_CONFIG_PATH)
-    parser.add_argument("--rerank-top1-margin-lambda", type=float, default=0.0)
+    parser.add_argument("--llm-config-path",)
+    parser.add_argument("--rerank-top1-margin-lambda", type=float,)
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config")
+    pre_args, _ = pre_parser.parse_known_args(sys.argv[1:])
+    config_path = Path(pre_args.config).expanduser() if pre_args.config else (Path.cwd() / "cli.defaults.json")
+    if not config_path.is_absolute():
+        config_path = Path.cwd() / config_path
+    parser.set_defaults(**load_script_defaults(config_path, "run_rag"))
     args = parser.parse_args()
+    if not args.question:
+        parser.error("missing required parameter 'question'")
 
     run_rag(
         question=args.question,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol
@@ -15,6 +16,7 @@ from ingestion.loaders import load_bm25_documents_from_dataset, load_semantic_do
 from retrieval.bm25 import BM25Document, BM25Index
 from retrieval.hybrid import hybrid_search
 from retrieval.semantic import SemanticDocument, search_semantic
+from utils.cli_config import load_script_defaults
 from utils.embedding_format import format_query_for_embedding
 
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
@@ -224,24 +226,25 @@ def parse_k_values(raw: str) -> list[int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run retrieval benchmark on evaluation dataset.")
-    parser.add_argument("--dataset", default="data/evaluation_with_evidence.jsonl")
-    parser.add_argument("--retriever", choices=("semantic", "bm25", "hybrid"), default="semantic")
-    parser.add_argument("--k-values", default="1,3,5")
-    parser.add_argument("--rag-dataset", default="data/rag_dataset.jsonl")
-    parser.add_argument("--faiss-path", default="data/faiss")
-    parser.add_argument("--index", default=".")
-    parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
-    parser.add_argument("--alpha", type=float, default=0.7, help="Hybrid semantic/BM25 mix.")
+    parser.add_argument("--config", help="Path to CLI defaults JSON.")
+    parser.add_argument("--dataset",)
+    parser.add_argument("--retriever", choices=("semantic", "bm25", "hybrid"),)
+    parser.add_argument("--k-values",)
+    parser.add_argument("--rag-dataset",)
+    parser.add_argument("--faiss-path",)
+    parser.add_argument("--index",)
+    parser.add_argument("--embedding-model",)
+    parser.add_argument("--alpha", type=float, help="Hybrid semantic/BM25 mix.")
     parser.add_argument("--retrieval-cache-enabled", action="store_true")
-    parser.add_argument("--retrieval-cache-capacity", type=int, default=10000)
-    parser.add_argument("--retrieval-cache-ttl-seconds", type=float, default=300.0)
+    parser.add_argument("--retrieval-cache-capacity", type=int,)
+    parser.add_argument("--retrieval-cache-ttl-seconds", type=float,)
     parser.add_argument("--rerank", action="store_true", help="Apply cross-encoder reranking.")
-    parser.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
-    parser.add_argument("--rerank-candidates", type=int, default=20)
+    parser.add_argument("--reranker-model",)
+    parser.add_argument("--rerank-candidates", type=int,)
     parser.add_argument(
         "--rerank-top1-margin-lambda",
         type=float,
-        default=0.0,
+
         help="Post-process top-1 score with lambda * (top1 - top2).",
     )
     parser.add_argument(
@@ -249,7 +252,14 @@ def main() -> None:
         action="store_true",
         help="Evaluate only samples with non-empty expected_evidence.chunk_ids.",
     )
-    parser.add_argument("--out-json", default=None, help="Optional path to save JSON report.")
+    parser.add_argument("--out-json", help="Optional path to save JSON report.")
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config")
+    pre_args, _ = pre_parser.parse_known_args(sys.argv[1:])
+    config_path = Path(pre_args.config).expanduser() if pre_args.config else (Path.cwd() / "cli.defaults.json")
+    if not config_path.is_absolute():
+        config_path = Path.cwd() / config_path
+    parser.set_defaults(**load_script_defaults(config_path, "evaluation_runner"))
     args = parser.parse_args()
 
     samples = load_eval_samples(Path(args.dataset))

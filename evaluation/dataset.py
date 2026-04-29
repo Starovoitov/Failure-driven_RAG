@@ -5,11 +5,13 @@ import json
 import math
 import random
 import re
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from difflib import SequenceMatcher, get_close_matches
 from pathlib import Path
 from typing import Any
+from utils.cli_config import load_script_defaults
 
 COMMON_RAG_LEXEMES = frozenset(
     {
@@ -43,6 +45,7 @@ COMMON_RAG_LEXEMES = frozenset(
         "language",
     }
 )
+
 
 SUPPORT_CONCEPT_TERMS = (
     "grounding",
@@ -762,19 +765,27 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Build structured evaluation JSONL from evaluation JSON + rag_dataset.jsonl.",
     )
-    parser.add_argument("--rag", type=Path, default=Path("data/rag_dataset.jsonl"))
-    parser.add_argument("--eval", type=Path, default=Path("evaluation/evaluation.json"))
-    parser.add_argument("--out", type=Path, default=Path("data/evaluation_with_evidence.jsonl"))
-    parser.add_argument("--fuzzy-ratio", type=float, default=0.86)
-    parser.add_argument("--lexical-min-hits", type=int, default=2)
-    parser.add_argument("--max-chunk-ids", type=int, default=2)
+    parser.add_argument("--config", help="Path to CLI defaults JSON.")
+    parser.add_argument("--rag", type=Path,)
+    parser.add_argument("--eval", type=Path,)
+    parser.add_argument("--out", type=Path,)
+    parser.add_argument("--fuzzy-ratio", type=float,)
+    parser.add_argument("--lexical-min-hits", type=int,)
+    parser.add_argument("--max-chunk-ids", type=int,)
     parser.add_argument("--no-semantic-fallback", action="store_true")
-    parser.add_argument("--semantic-model", default=DEFAULT_EMBEDDING_MODEL)
-    parser.add_argument("--semantic-min-score", type=float, default=0.56)
-    parser.add_argument("--max-gt-url-share", type=float, default=0.25)
-    parser.add_argument("--target-multi-gt-share", type=float, default=0.4)
-    parser.add_argument("--keep-max-ids-for-multi", type=int, default=1)
-    parser.add_argument("--excerpt-max", type=int, default=320)
+    parser.add_argument("--semantic-model",)
+    parser.add_argument("--semantic-min-score", type=float,)
+    parser.add_argument("--max-gt-url-share", type=float,)
+    parser.add_argument("--target-multi-gt-share", type=float,)
+    parser.add_argument("--keep-max-ids-for-multi", type=int,)
+    parser.add_argument("--excerpt-max", type=int,)
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config")
+    pre_args, _ = pre_parser.parse_known_args(sys.argv[1:])
+    config_path = Path(pre_args.config).expanduser() if pre_args.config else (Path.cwd() / "cli.defaults.json")
+    if not config_path.is_absolute():
+        config_path = Path.cwd() / config_path
+    parser.set_defaults(**load_script_defaults(config_path, "evaluation_dataset"))
     args = parser.parse_args()
 
     count, stats = build_evaluation_dataset(

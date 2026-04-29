@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+.DS_Store
+.vscode
+data
+logs
+artifacts
+experiments/results
+experiments/logs
+models/eval
+FE/node_modules
+FE/dist

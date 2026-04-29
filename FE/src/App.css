@@ -2,14 +2,21 @@
   box-sizing: border-box;
 }
 
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   font-family: Inter, Arial, sans-serif;
   background: #10131a;
   color: #eaf0ff;
+  overflow-x: hidden;
 }
 
 .container {
+  width: 100%;
   max-width: 1300px;
   margin: 0 auto;
   padding: 24px;
@@ -19,6 +26,10 @@ body {
   display: grid;
   grid-template-columns: 2fr 1fr;
   gap: 16px;
+}
+
+.layout > * {
+  min-width: 0;
 }
 
 h1 {

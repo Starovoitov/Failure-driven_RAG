@@ -25,7 +25,13 @@ class TestRetrieval(unittest.TestCase):
 
     def test_hybrid_search_merges_ranks(self) -> None:
         semantic = [SemanticResult(doc_id="a", text="A", score=0.9, metadata={"source": "s1"})]
-        bm25 = [type("BM25ResultLike", (), {"doc_id": "a", "text": "A", "score": 2.0, "metadata": {"source": "s1"}})()]
+        bm25 = [
+            type(
+                "BM25ResultLike",
+                (),
+                {"doc_id": "a", "text": "A", "score": 2.0, "metadata": {"source": "s1"}},
+            )()
+        ]
         merged = hybrid_search(semantic, bm25, top_k=1)
         self.assertEqual(len(merged), 1)
         self.assertEqual(merged[0].doc_id, "a")
@@ -47,4 +53,3 @@ class TestRetrieval(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

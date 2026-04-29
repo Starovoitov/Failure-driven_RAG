@@ -9,7 +9,6 @@ from sentence_transformers import SentenceTransformer
 from embeddings.faiss_store import save_faiss_index
 from utils.embedding_format import format_passage_for_embedding
 
-
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 
 

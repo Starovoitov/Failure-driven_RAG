@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 
 from evaluation.metrics import (
-    evaluate_retrieval,
     RetrievalResult,
+    evaluate_retrieval,
     hit_rate_at_k,
     ndcg_at_k,
     precision_at_k,
@@ -42,4 +42,3 @@ class TestEvaluationMetrics(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

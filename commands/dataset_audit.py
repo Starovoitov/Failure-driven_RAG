@@ -39,7 +39,10 @@ def _build_chunk_level_stats(raw_chunks: list[dict[str, Any]]) -> dict[str, Any]
     urls = Counter((item.get("metadata") or {}).get("url", "") for item in raw_chunks)
     text_counter = Counter((item.get("text") or "").strip() for item in raw_chunks)
     duplicate_text_entries = sum(1 for _, cnt in text_counter.items() if cnt > 1)
-    chunk_to_url = {str(item.get("chunk_id")): (item.get("metadata") or {}).get("url", "") for item in raw_chunks}
+    chunk_to_url = {
+        str(item.get("chunk_id")): (item.get("metadata") or {}).get("url", "")
+        for item in raw_chunks
+    }
     return {
         "chunk_ids": chunk_ids,
         "token_counts": token_counts,
@@ -78,7 +81,9 @@ def _collect_evaluation_counters(
     }
 
 
-def _build_gt_url_counter(gt_chunk_counter: Counter[str], chunk_to_url: dict[str, str]) -> Counter[str]:
+def _build_gt_url_counter(
+    gt_chunk_counter: Counter[str], chunk_to_url: dict[str, str]
+) -> Counter[str]:
     gt_url_counter = Counter()
     for cid, count in gt_chunk_counter.items():
         gt_url_counter[chunk_to_url.get(cid, "")] += count
@@ -96,7 +101,15 @@ def _quality_score(
     coverage = 1.0 - (queries_with_no_gt / total_eval)
     source_diversity_penalty = top_share(gt_url_counter, 1)
     gt_concentration_penalty = top_share(gt_chunk_counter, 10)
-    return max(0.0, min(1.0, coverage * (1.0 - 0.5 * source_diversity_penalty) * (1.0 - 0.5 * gt_concentration_penalty)))
+    return max(
+        0.0,
+        min(
+            1.0,
+            coverage
+            * (1.0 - 0.5 * source_diversity_penalty)
+            * (1.0 - 0.5 * gt_concentration_penalty),
+        ),
+    )
 
 
 def audit(rag_path: Path, eval_path: Path) -> dict[str, Any]:
@@ -105,7 +118,9 @@ def audit(rag_path: Path, eval_path: Path) -> dict[str, Any]:
 
     chunk_stats = _build_chunk_level_stats(raw_chunks)
     eval_stats = _collect_evaluation_counters(eval_rows, chunk_stats["chunk_ids"])
-    gt_url_counter = _build_gt_url_counter(eval_stats["gt_chunk_counter"], chunk_stats["chunk_to_url"])
+    gt_url_counter = _build_gt_url_counter(
+        eval_stats["gt_chunk_counter"], chunk_stats["chunk_to_url"]
+    )
 
     evidence_dist = Counter(eval_stats["evidence_counts"])
     queries_multi_gt = sum(1 for n in eval_stats["evidence_counts"] if n > 1)
@@ -123,8 +138,12 @@ def audit(rag_path: Path, eval_path: Path) -> dict[str, Any]:
         "inputs": {"rag_path": str(rag_path), "eval_path": str(eval_path)},
         "rag": {
             "raw_chunks": len(raw_chunks),
-            "token_count_min": min(chunk_stats["token_counts"]) if chunk_stats["token_counts"] else 0,
-            "token_count_max": max(chunk_stats["token_counts"]) if chunk_stats["token_counts"] else 0,
+            "token_count_min": (
+                min(chunk_stats["token_counts"]) if chunk_stats["token_counts"] else 0
+            ),
+            "token_count_max": (
+                max(chunk_stats["token_counts"]) if chunk_stats["token_counts"] else 0
+            ),
             "token_count_avg": (
                 (sum(chunk_stats["token_counts"]) / len(chunk_stats["token_counts"]))
                 if chunk_stats["token_counts"]
@@ -151,4 +170,3 @@ def audit(rag_path: Path, eval_path: Path) -> dict[str, Any]:
         },
         "quality_score": quality_score,
     }
-

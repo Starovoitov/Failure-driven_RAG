@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+
 from pydantic import BaseModel
 
 SYSTEM_PROMPT = """
@@ -136,7 +137,7 @@ def build_rag_messages(
 
     anti_hallucination_guard = (
         "If the sources are insufficient or contradictory, answer exactly: "
-        "\"Not found in provided sources.\""
+        '"Not found in provided sources."'
     )
     system = f"{SYSTEM_PROMPT}\n\nAdditional guardrail:\n{anti_hallucination_guard}"
     user = USER_PROMPT.format(context=context or "[no sources provided]", question=question)

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pydantic import BaseModel, Field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 def utc_now_iso() -> str:
@@ -60,4 +61,3 @@ class EdgeCaseRecord(BaseModel):
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
-

@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+
 def cleanup_faiss_db(
     persist_directory: str = "data/faiss",
     index_name: str = ".",

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from pydantic import BaseModel, Field
+
 from embeddings.embedder import generate_embeddings, upsert_embeddings_to_faiss
 from embeddings.faiss_store import load_semantic_documents_from_faiss as load_from_faiss_store
 from parser.pipeline import run_pipeline
 from retrieval.semantic import SemanticDocument
-
 
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 
@@ -76,7 +77,9 @@ def run_parser_and_upsert_to_faiss(
     return stats
 
 
-def load_bm25_documents_from_dataset(dataset_path: str = "data/rag_dataset.jsonl") -> list[dict[str, Any]]:
+def load_bm25_documents_from_dataset(
+    dataset_path: str = "data/rag_dataset.jsonl",
+) -> list[dict[str, Any]]:
     """Load raw chunk documents from dataset for lexical retrieval."""
     return [
         {

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import time
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import requests
 from pydantic import BaseModel
-from caching import LRUTTLCache
 from retry import retry
+
+from caching import LRUTTLCache
 from utils.logger import get_json_logger, log_event
 
 
@@ -60,10 +62,9 @@ def _get_llm_cache(config: LLMConfig) -> LRUTTLCache[str, str]:
         )
         return _LLM_RESPONSE_CACHE
 
-    if (
-        _LLM_RESPONSE_CACHE.capacity != max(1, config.cache_capacity)
-        or _LLM_RESPONSE_CACHE.default_ttl_seconds != max(0.1, config.cache_ttl_seconds)
-    ):
+    if _LLM_RESPONSE_CACHE.capacity != max(
+        1, config.cache_capacity
+    ) or _LLM_RESPONSE_CACHE.default_ttl_seconds != max(0.1, config.cache_ttl_seconds):
         _LLM_RESPONSE_CACHE = LRUTTLCache(
             capacity=max(1, config.cache_capacity),
             ttl_seconds=max(0.1, config.cache_ttl_seconds),
@@ -80,7 +81,9 @@ def _headers(config: LLMConfig) -> dict[str, str]:
     return headers
 
 
-def _payload(system_prompt: str, user_prompt: str, config: LLMConfig, stream: bool) -> dict[str, Any]:
+def _payload(
+    system_prompt: str, user_prompt: str, config: LLMConfig, stream: bool
+) -> dict[str, Any]:
     return {
         "model": config.model,
         "messages": [

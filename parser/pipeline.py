@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
+
 from parser.chunking import chunk_text, jaccard_similarity_tokens, overlap_tokens, token_count
 from parser.edge_cases import build_edge_cases
 from parser.models import RawChunkRecord, SourceSpec
@@ -13,8 +14,8 @@ from parser.normalize import normalize_text
 from parser.qa import build_qa_pairs
 from parser.scraper import scrape_source
 from parser.sources import (
-    AliasGroupPayload,
     DEFAULT_SOURCES_CONFIG_PATH,
+    AliasGroupPayload,
     SeedChunkPayload,
     build_alias_groups,
     build_seed_chunks,
@@ -231,7 +232,10 @@ def run_pipeline(
                     continue
                 if near_duplicate_jaccard > 0:
                     previous_chunks = accepted_chunks_by_url.get(source.url, [])
-                    if any(jaccard_similarity_tokens(chunk, prev) >= near_duplicate_jaccard for prev in previous_chunks):
+                    if any(
+                        jaccard_similarity_tokens(chunk, prev) >= near_duplicate_jaccard
+                        for prev in previous_chunks
+                    ):
                         counters.skipped_by_near_duplicate += 1
                         continue
 
@@ -325,4 +329,3 @@ def enrich_metadata(
         "language": "en",
         "scraped_at": scraped_at,
     }
-

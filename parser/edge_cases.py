@@ -17,9 +17,7 @@ def build_edge_cases(metadata: dict[str, str]) -> list[EdgeCaseRecord]:
                 "Chunk A: 'FAISS is a library for effi...'\n"
                 "Chunk B: '...cient similarity search and clustering.'"
             ),
-            corrected_example=(
-                "Single chunk with complete sentence and context about index type."
-            ),
+            corrected_example=("Single chunk with complete sentence and context about index type."),
             why_it_fails="Definition is broken and retrieval returns incomplete meaning.",
             metadata=metadata,
         ),
@@ -44,4 +42,3 @@ def build_edge_cases(metadata: dict[str, str]) -> list[EdgeCaseRecord]:
             metadata=metadata,
         ),
     ]
-

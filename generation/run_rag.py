@@ -19,6 +19,7 @@ from utils.logger import configure_runtime_logger
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 FALLBACK_LLM_PROVIDERS: tuple[str, ...] = ("openai", "gigachat", "ollama", "qwen")
 
+
 def _guess_embedding_models_by_dim(dim: int) -> str:
     known_dims = {
         384: "intfloat/e5-small-v2",
@@ -28,7 +29,9 @@ def _guess_embedding_models_by_dim(dim: int) -> str:
     return known_dims.get(dim, "unknown")
 
 
-def get_llm_config(provider: str, model: str | None = None, *, config_path: str = DEFAULT_LLM_CONFIG_PATH) -> LLMConfig:
+def get_llm_config(
+    provider: str, model: str | None = None, *, config_path: str = DEFAULT_LLM_CONFIG_PATH
+) -> LLMConfig:
     """Load provider defaults from config and optionally override model."""
     configs = load_llm_provider_configs(config_path=config_path)
     key = provider.lower().strip()
@@ -52,7 +55,6 @@ def _load_known_providers_safe(config_path: str) -> tuple[str, ...]:
         return provider_names or FALLBACK_LLM_PROVIDERS
     except Exception:
         return FALLBACK_LLM_PROVIDERS
-
 
 
 def run_rag(
@@ -116,7 +118,8 @@ def run_rag(
             logger.error("embedding dimension mismatch detected")
             raise ValueError(
                 "Embedding dimension mismatch between query and indexed documents: "
-                f"query_dim={query_dim} (model='{embedding_model}', likely '{suggested_query_model}'), "
+                f"query_dim={query_dim} (model='{embedding_model}', "
+                f"likely '{suggested_query_model}'), "
                 f"doc_dim={doc_dim} (likely '{suggested_doc_model}'). "
                 "Use `--embedding-model` that matches the model used during index build, "
                 "or rebuild the FAISS index with the selected embedding model."
@@ -221,35 +224,77 @@ def main() -> None:
     known_providers = _load_known_providers_safe(DEFAULT_LLM_CONFIG_PATH)
     parser.add_argument(
         "--provider",
-
         choices=known_providers,
         help="LLM provider config to use.",
     )
     parser.add_argument("--model", help="Override provider default model.")
-    parser.add_argument("--top-k", type=int,)
-    parser.add_argument("--max-context-tokens", type=int,)
-    parser.add_argument("--faiss-path",)
-    parser.add_argument("--index",)
-    parser.add_argument("--embedding-model",)
+    parser.add_argument(
+        "--top-k",
+        type=int,
+    )
+    parser.add_argument(
+        "--max-context-tokens",
+        type=int,
+    )
+    parser.add_argument(
+        "--faiss-path",
+    )
+    parser.add_argument(
+        "--index",
+    )
+    parser.add_argument(
+        "--embedding-model",
+    )
     parser.add_argument("--stream", action="store_true", help="Stream answer tokens.")
-    parser.add_argument("--max-tokens", type=int,)
-    parser.add_argument("--temperature", type=float,)
-    parser.add_argument("--top-p", type=float,)
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+    )
     parser.add_argument("--rerank", action="store_true", help="Apply cross-encoder reranking.")
-    parser.add_argument("--reranker-model",)
-    parser.add_argument("--rerank-candidates", type=int,)
-    parser.add_argument("--llm-cache-enabled", action="store_true", help="Enable in-memory LLM response cache.")
-    parser.add_argument("--llm-cache-capacity", type=int,)
-    parser.add_argument("--llm-cache-ttl-seconds", type=float,)
+    parser.add_argument(
+        "--reranker-model",
+    )
+    parser.add_argument(
+        "--rerank-candidates",
+        type=int,
+    )
+    parser.add_argument(
+        "--llm-cache-enabled", action="store_true", help="Enable in-memory LLM response cache."
+    )
+    parser.add_argument(
+        "--llm-cache-capacity",
+        type=int,
+    )
+    parser.add_argument(
+        "--llm-cache-ttl-seconds",
+        type=float,
+    )
     parser.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
     parser.add_argument("--log-path", help="Optional runtime log file path.")
     parser.add_argument("--log-json", action="store_true", help="Emit runtime logs in JSON format.")
-    parser.add_argument("--llm-config-path",)
-    parser.add_argument("--rerank-top1-margin-lambda", type=float,)
+    parser.add_argument(
+        "--llm-config-path",
+    )
+    parser.add_argument(
+        "--rerank-top1-margin-lambda",
+        type=float,
+    )
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config")
     pre_args, _ = pre_parser.parse_known_args(sys.argv[1:])
-    config_path = Path(pre_args.config).expanduser() if pre_args.config else (Path.cwd() / "cli.defaults.json")
+    config_path = (
+        Path(pre_args.config).expanduser()
+        if pre_args.config
+        else (Path.cwd() / "cli.defaults.json")
+    )
     if not config_path.is_absolute():
         config_path = Path.cwd() / config_path
     parser.set_defaults(**load_script_defaults(config_path, "run_rag"))
@@ -282,4 +327,3 @@ def main() -> None:
         llm_config_path=args.llm_config_path,
         rerank_top1_margin_lambda=args.rerank_top1_margin_lambda,
     )
-

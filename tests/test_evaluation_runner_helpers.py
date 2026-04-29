@@ -33,7 +33,9 @@ class TestEvaluationRunnerHelpers(unittest.TestCase):
         sys.modules["sentence_transformers"] = fake
         fake_ingestion = types.ModuleType("ingestion.loaders")
         fake_ingestion.load_bm25_documents_from_dataset = lambda *args, **kwargs: []  # noqa: ARG005
-        fake_ingestion.load_semantic_documents_from_faiss = lambda *args, **kwargs: []  # noqa: ARG005
+        fake_ingestion.load_semantic_documents_from_faiss = (
+            lambda *args, **kwargs: []
+        )  # noqa: ARG005
         sys.modules["ingestion.loaders"] = fake_ingestion
 
         fake_bm25 = types.ModuleType("retrieval.bm25")

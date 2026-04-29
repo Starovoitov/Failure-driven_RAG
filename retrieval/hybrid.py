@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
 from typing import Any
+
+from pydantic import BaseModel
 
 from retrieval.bm25 import BM25Result
 from retrieval.semantic import SemanticResult

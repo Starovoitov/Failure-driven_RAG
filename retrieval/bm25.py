@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import math
-from pydantic import BaseModel, Field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from utils.common import tokenize
 

@@ -3,24 +3,24 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import random
 import sys
 from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING
-from utils.common import min_max_normalize, rank_weight, tokenize
+
 from utils.cli_config import (
     apply_config_defaults,
     load_cli_defaults,
     validate_required_command_params,
 )
+from utils.common import min_max_normalize, rank_weight, tokenize
+from utils.logger import configure_runtime_logger
 from utils.query_manipulation import (
     build_query_variants_with_debug,
     llm_structured_query_expansion_batch,
 )
-from utils.logger import configure_runtime_logger
 
 if TYPE_CHECKING:
     from reranking.cross_encoder import RerankCandidate
@@ -48,9 +48,9 @@ def _rrf_fuse_doc_ids(ranked_lists: list[list[str]], top_k: int, rrf_k: int = 60
 
 def _prefilter_rerank_candidates(
     query: str,
-    candidates: list["RerankCandidate"],
+    candidates: list[RerankCandidate],
     keep_top_n: int,
-) -> list["RerankCandidate"]:
+) -> list[RerankCandidate]:
     if keep_top_n <= 0 or len(candidates) <= keep_top_n:
         return candidates
 
@@ -58,7 +58,7 @@ def _prefilter_rerank_candidates(
     if not query_terms:
         return candidates[:keep_top_n]
 
-    ranked: list[tuple[float, int, "RerankCandidate"]] = []
+    ranked: list[tuple[float, int, RerankCandidate]] = []
     for idx, candidate in enumerate(candidates):
         doc_terms = set(tokenize(candidate.text, for_bm25=True))
         overlap = len(query_terms & doc_terms)
@@ -146,8 +146,12 @@ def _classify_failure(
     near_miss_threshold: float,
     top_k: int,
 ) -> tuple[str, dict[str, object]]:
-    gt_texts = [doc_text_map.get(doc_id, "") for doc_id in gt_doc_ids if doc_text_map.get(doc_id, "")]
-    retrieved_texts = [doc_text_map.get(doc_id, "") for doc_id in top_k_doc_ids if doc_text_map.get(doc_id, "")]
+    gt_texts = [
+        doc_text_map.get(doc_id, "") for doc_id in gt_doc_ids if doc_text_map.get(doc_id, "")
+    ]
+    retrieved_texts = [
+        doc_text_map.get(doc_id, "") for doc_id in top_k_doc_ids if doc_text_map.get(doc_id, "")
+    ]
 
     near_miss_score = 0.0
     for gt_text in gt_texts:
@@ -166,8 +170,12 @@ def _classify_failure(
             if not gt_tokens:
                 continue
             for hit_text in retrieved_texts:
-                best_single_overlap = max(best_single_overlap, _single_chunk_overlap_ratio(gt_text, hit_text))
-            combined_overlap = max(combined_overlap, len(gt_tokens & combined_tokens) / len(gt_tokens))
+                best_single_overlap = max(
+                    best_single_overlap, _single_chunk_overlap_ratio(gt_text, hit_text)
+                )
+            combined_overlap = max(
+                combined_overlap, len(gt_tokens & combined_tokens) / len(gt_tokens)
+            )
     if combined_overlap >= 0.75 and best_single_overlap < 0.55:
         return "fragmentation", {
             "combined_overlap": combined_overlap,
@@ -188,7 +196,9 @@ def _classify_failure(
         gt_tokens = _content_tokens(gt_text)
         if not gt_tokens or not query_tokens:
             continue
-        best_query_overlap = max(best_query_overlap, len(query_tokens & gt_tokens) / len(query_tokens))
+        best_query_overlap = max(
+            best_query_overlap, len(query_tokens & gt_tokens) / len(query_tokens)
+        )
 
     return "true_recall_failure", {"best_query_to_gt_overlap": best_query_overlap}
 
@@ -263,7 +273,7 @@ def _build_stratified_rerank_pool(
 def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     if len(vec_a) != len(vec_b) or not vec_a:
         return 0.0
-    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    dot = sum(a * b for a, b in zip(vec_a, vec_b, strict=True))
     norm_a = sum(a * a for a in vec_a) ** 0.5
     norm_b = sum(b * b for b in vec_b) ** 0.5
     if norm_a <= 1e-12 or norm_b <= 1e-12:
@@ -283,7 +293,9 @@ def _mmr_select_candidates(
     if max_k <= 0:
         return []
     seen: set[str] = set()
-    candidates = [doc_id for doc_id in candidate_doc_ids if doc_id not in seen and not seen.add(doc_id)]
+    candidates = [
+        doc_id for doc_id in candidate_doc_ids if doc_id not in seen and not seen.add(doc_id)
+    ]
     if not candidates:
         return []
 
@@ -294,7 +306,8 @@ def _mmr_select_candidates(
         return candidates[:max_k]
 
     q_scores = {
-        doc_id: _cosine_similarity(query_embedding, doc_embeddings[doc_id]) for doc_id in candidates_with_vec
+        doc_id: _cosine_similarity(query_embedding, doc_embeddings[doc_id])
+        for doc_id in candidates_with_vec
     }
     selected: list[str] = []
     remaining = list(candidates_with_vec)
@@ -314,7 +327,11 @@ def _mmr_select_candidates(
                 )
                 mmr_score = (lambda_ * relevance) - ((1.0 - lambda_) * max_sim_to_selected)
 
-            if diversity_threshold is not None and selected and max_sim_to_selected >= diversity_threshold:
+            if (
+                diversity_threshold is not None
+                and selected
+                and max_sim_to_selected >= diversity_threshold
+            ):
                 continue
             if mmr_score > best_score:
                 best_score = mmr_score
@@ -428,7 +445,10 @@ def _build_reranker_training_contexts_from_failures(
             negative_weights[negative_id] = sample_weight * rank_weight(rank)
 
         # Source-miss signal is useful for hard-negative enrichment only.
-        if source_miss_type in {"embedding_miss", "bm25_miss"} and len(negative_ids) < max_negatives:
+        if (
+            source_miss_type in {"embedding_miss", "bm25_miss"}
+            and len(negative_ids) < max_negatives
+        ):
             for rank, negative_id in enumerate(retrieved_full, start=len(negative_ids) + 1):
                 if len(negative_ids) >= max_negatives:
                     break
@@ -480,7 +500,11 @@ def _train_reranker_from_contexts_jsonl(
     from sentence_transformers.cross_encoder.evaluation import CEBinaryClassificationEvaluator
     from torch.utils.data import DataLoader
 
-    rows = [json.loads(line) for line in train_jsonl.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [
+        json.loads(line)
+        for line in train_jsonl.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     random.Random(seed).shuffle(rows)
 
     examples: list[InputExample] = []
@@ -528,7 +552,9 @@ def _train_reranker_from_contexts_jsonl(
     train_loader = DataLoader(train_examples, shuffle=True, batch_size=batch_size)
     evaluator = None
     if val_examples:
-        evaluator = CEBinaryClassificationEvaluator.from_input_examples(val_examples, name="failure-driven-val")
+        evaluator = CEBinaryClassificationEvaluator.from_input_examples(
+            val_examples, name="failure-driven-val"
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     model.fit(
@@ -719,14 +745,20 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
             source_probe_k = max(retrieve_k, args.soft_recall_rescue_bm25_depth)
             semantic_obj = getattr(retriever, "semantic", None)
             bm25_obj = getattr(retriever, "bm25", None)
-            if semantic_obj is not None and hasattr(semantic_obj, "search") and hasattr(semantic_obj, "embedder"):
+            if (
+                semantic_obj is not None
+                and hasattr(semantic_obj, "search")
+                and hasattr(semantic_obj, "embedder")
+            ):
                 query_embedding = semantic_obj.embedder.encode(
                     [format_query_for_embedding(sample.query, semantic_obj.embedding_model)],
                     normalize_embeddings=True,
                     show_progress_bar=False,
                 )[0].tolist()
                 query_embedding_for_mmr = query_embedding
-                semantic_hits = search_semantic(query_embedding, semantic_obj.documents, top_k=source_probe_k)
+                semantic_hits = search_semantic(
+                    query_embedding, semantic_obj.documents, top_k=source_probe_k
+                )
                 semantic_branch_doc_ids = [item.doc_id for item in semantic_hits]
                 semantic_score_map = {item.doc_id: float(item.score) for item in semantic_hits}
             if bm25_obj is not None and hasattr(bm25_obj, "index"):
@@ -763,8 +795,12 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                         )
                 if bool(llm_debug.get("fallback_used", False)):
                     llm_expansion_stats["fallback_queries"] += 1
-            per_query_results = [retriever.search(query, top_k=retrieve_k) for query in query_variants if query]
-            retrieved = _rrf_fuse_doc_ids(per_query_results, top_k=retrieve_k, rrf_k=args.multi_query_rrf_k)
+            per_query_results = [
+                retriever.search(query, top_k=retrieve_k) for query in query_variants if query
+            ]
+            retrieved = _rrf_fuse_doc_ids(
+                per_query_results, top_k=retrieve_k, rrf_k=args.multi_query_rrf_k
+            )
         else:
             retrieved = retriever.search(sample.query, top_k=retrieve_k)
         if reranker is not None:
@@ -824,7 +860,8 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                 rerank_input = [
                     candidate
                     for candidate in rerank_input
-                    if candidate.metadata.get("semantic_norm", 0.0) >= args.hard_negative_semantic_floor
+                    if candidate.metadata.get("semantic_norm", 0.0)
+                    >= args.hard_negative_semantic_floor
                 ]
             if args.two_stage_rerank:
                 rerank_input = _prefilter_rerank_candidates(
@@ -859,7 +896,9 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                 relevant_doc_ids=sample.relevant_docs,
             )
         )
-        if sample.relevant_docs and not set(retrieved_for_metrics).intersection(sample.relevant_docs):
+        if sample.relevant_docs and not set(retrieved_for_metrics).intersection(
+            sample.relevant_docs
+        ):
             miss_type = _source_miss_type(
                 relevant_doc_ids=sample.relevant_docs,
                 semantic_doc_ids=semantic_branch_doc_ids,
@@ -885,7 +924,9 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                     "relevant_doc_ids": sample.relevant_docs,
                     "retrieved_top_k_doc_ids": retrieved_for_metrics,
                     "retrieved_full_doc_ids": retrieved,
-                    "bm25_branch_doc_ids": (bm25_branch_doc_ids or [])[: args.soft_recall_rescue_bm25_depth],
+                    "bm25_branch_doc_ids": (bm25_branch_doc_ids or [])[
+                        : args.soft_recall_rescue_bm25_depth
+                    ],
                     "source_miss_type": miss_type,
                     "reasons": reasons,
                 }
@@ -923,8 +964,12 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
         "ce_calibration": args.ce_calibration if args.rerank else None,
         "ce_temperature": args.ce_temperature if args.rerank else None,
         "soft_recall_rescue_enabled": args.soft_recall_rescue,
-        "soft_recall_rescue_tail_k": args.soft_recall_rescue_tail_k if args.soft_recall_rescue else 0,
-        "soft_recall_rescue_bm25_depth": args.soft_recall_rescue_bm25_depth if args.soft_recall_rescue else 0,
+        "soft_recall_rescue_tail_k": (
+            args.soft_recall_rescue_tail_k if args.soft_recall_rescue else 0
+        ),
+        "soft_recall_rescue_bm25_depth": (
+            args.soft_recall_rescue_bm25_depth if args.soft_recall_rescue else 0
+        ),
         "multi_query_enabled": args.multi_query,
         "cache": {
             "retrieval_enabled": args.retrieval_cache_enabled,
@@ -938,7 +983,9 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
         "mmr_lambda": args.mmr_lambda if args.mmr_before_rerank else None,
         "mmr_k": args.mmr_k if args.mmr_before_rerank else None,
         "mmr_diversity_threshold": (
-            args.mmr_diversity_threshold if (args.mmr_before_rerank and args.mmr_diversity_threshold > 0) else None
+            args.mmr_diversity_threshold
+            if (args.mmr_before_rerank and args.mmr_diversity_threshold > 0)
+            else None
         ),
         "require_evidence": args.require_evidence,
         "k_values": k_values,
@@ -973,7 +1020,9 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
     reranker_dataset_export: dict[str, object] | None = None
     reranker_training_result: dict[str, object] | None = None
     if args.export_reranker_train_jsonl or args.train_reranker:
-        out_jsonl = Path(args.export_reranker_train_jsonl or "artifacts/datasets/reranker_train.jsonl")
+        out_jsonl = Path(
+            args.export_reranker_train_jsonl or "artifacts/datasets/reranker_train.jsonl"
+        )
         contexts, pair_stats = _build_reranker_training_contexts_from_failures(
             failure_records=failure_records,
             doc_text_map=doc_text_map,
@@ -1020,13 +1069,23 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
         print(f"- {key}: {metrics[key]:.4f}")
     if failure_records:
         print("- failure_buckets:")
-        for bucket in ("near_miss", "fragmentation", "ranking_cutoff_failure", "true_recall_failure"):
+        for bucket in (
+            "near_miss",
+            "fragmentation",
+            "ranking_cutoff_failure",
+            "true_recall_failure",
+        ):
             print(f"  - {bucket}: {failure_bucket_counts.get(bucket, 0)}")
         print("- failure_source_miss:")
         for key in ("embedding_miss", "bm25_miss", "both_miss", "both_hit"):
             print(f"  - {key}: {miss_type_counts.get(key, 0)}")
         print("- failure_bucket_source_miss:")
-        for bucket in ("near_miss", "fragmentation", "ranking_cutoff_failure", "true_recall_failure"):
+        for bucket in (
+            "near_miss",
+            "fragmentation",
+            "ranking_cutoff_failure",
+            "true_recall_failure",
+        ):
             per_bucket = failure_bucket_source_counts.get(bucket, Counter())
             print(
                 "  - "
@@ -1035,7 +1094,9 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
                 f"both_miss={per_bucket.get('both_miss', 0)}, "
                 f"both_hit={per_bucket.get('both_hit', 0)}"
             )
-        print(f"- failed_queries_for_manual_inspection: {min(len(failure_records), args.failure_sample_size)}")
+        print(
+            f"- failed_queries_for_manual_inspection: {min(len(failure_records), args.failure_sample_size)}"
+        )
     if args.multi_query_llm_debug and args.multi_query_llm_expansion:
         print(
             "- multi_query_llm_debug: "
@@ -1278,10 +1339,11 @@ def cmd_build_reranker_dataset(args: argparse.Namespace) -> None:
 
 def cmd_train_reranker(args: argparse.Namespace) -> None:
     # Heavy training deps are imported lazily for non-training commands.
-    from commands.train_reranker import load_chunk_texts, load_pairwise_samples
     from sentence_transformers.cross_encoder import CrossEncoder
     from sentence_transformers.cross_encoder.evaluation import CEBinaryClassificationEvaluator
     from torch.utils.data import DataLoader
+
+    from commands.train_reranker import load_chunk_texts, load_pairwise_samples
 
     chunk_texts = load_chunk_texts(Path(args.rag_dataset))
     train_examples, val_examples = load_pairwise_samples(
@@ -1347,7 +1409,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Single entrypoint for project workflows.")
     parser.add_argument(
         "--config",
-
         help="Path to CLI defaults JSON (default: project root cli.defaults.json).",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1357,38 +1418,92 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["build-parser"],
         help="Run parser pipeline and build rag_dataset.jsonl",
     )
-    build_parser_cmd.add_argument("--output",)
-    build_parser_cmd.add_argument("--min-tokens", type=int,)
-    build_parser_cmd.add_argument("--max-tokens", type=int,)
-    build_parser_cmd.add_argument("--overlap-ratio", type=float,)
-    build_parser_cmd.add_argument("--min-output-chunk-tokens", type=int,)
-    build_parser_cmd.add_argument("--max-output-chunk-tokens", type=int,)
-    build_parser_cmd.add_argument("--max-chunks-per-url", type=int,)
-    build_parser_cmd.add_argument("--max-chunks-per-category", type=int,)
-    build_parser_cmd.add_argument("--sources-config",)
-    build_parser_cmd.add_argument("--chunker-mode", choices=("token", "semantic_dynamic"),)
+    build_parser_cmd.add_argument(
+        "--output",
+    )
+    build_parser_cmd.add_argument(
+        "--min-tokens",
+        type=int,
+    )
+    build_parser_cmd.add_argument(
+        "--max-tokens",
+        type=int,
+    )
+    build_parser_cmd.add_argument(
+        "--overlap-ratio",
+        type=float,
+    )
+    build_parser_cmd.add_argument(
+        "--min-output-chunk-tokens",
+        type=int,
+    )
+    build_parser_cmd.add_argument(
+        "--max-output-chunk-tokens",
+        type=int,
+    )
+    build_parser_cmd.add_argument(
+        "--max-chunks-per-url",
+        type=int,
+    )
+    build_parser_cmd.add_argument(
+        "--max-chunks-per-category",
+        type=int,
+    )
+    build_parser_cmd.add_argument(
+        "--sources-config",
+    )
+    build_parser_cmd.add_argument(
+        "--chunker-mode",
+        choices=("token", "semantic_dynamic"),
+    )
     build_parser_cmd.add_argument(
         "--near-duplicate-jaccard",
         type=float,
-
         help="Skip near-duplicate chunks from the same URL when similarity >= threshold (0 disables).",
     )
-    build_parser_cmd.add_argument("--embedding-model",)
+    build_parser_cmd.add_argument(
+        "--embedding-model",
+    )
     build_parser_cmd.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
-    build_parser_cmd.add_argument("--log-path",)
+    build_parser_cmd.add_argument(
+        "--log-path",
+    )
     build_parser_cmd.add_argument("--log-json", action="store_true")
     build_parser_cmd.set_defaults(handler=cmd_build_parser)
 
-    demo_cmd = subparsers.add_parser("demo_retrieval", help="Run BM25/semantic/hybrid retrieval demo.")
-    demo_cmd.add_argument("--query", "-q",)
-    demo_cmd.add_argument("--top-k", "-k", type=int,)
-    demo_cmd.add_argument("--model", "-m",)
-    demo_cmd.add_argument("--dataset",)
-    demo_cmd.add_argument("--faiss-path",)
-    demo_cmd.add_argument("--index",)
+    demo_cmd = subparsers.add_parser(
+        "demo_retrieval", help="Run BM25/semantic/hybrid retrieval demo."
+    )
+    demo_cmd.add_argument(
+        "--query",
+        "-q",
+    )
+    demo_cmd.add_argument(
+        "--top-k",
+        "-k",
+        type=int,
+    )
+    demo_cmd.add_argument(
+        "--model",
+        "-m",
+    )
+    demo_cmd.add_argument(
+        "--dataset",
+    )
+    demo_cmd.add_argument(
+        "--faiss-path",
+    )
+    demo_cmd.add_argument(
+        "--index",
+    )
     demo_cmd.add_argument("--rerank", action="store_true")
-    demo_cmd.add_argument("--reranker-model",)
-    demo_cmd.add_argument("--rerank-candidates", type=int,)
+    demo_cmd.add_argument(
+        "--reranker-model",
+    )
+    demo_cmd.add_argument(
+        "--rerank-candidates",
+        type=int,
+    )
     demo_cmd.set_defaults(handler=cmd_demo_retrieval)
 
     eval_cmd = subparsers.add_parser(
@@ -1396,52 +1511,72 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["evaluate"],
         help="Run retrieval benchmark over eval dataset.",
     )
-    eval_cmd.add_argument("--dataset",)
-    eval_cmd.add_argument("--retriever", choices=("semantic", "bm25", "hybrid"),)
-    eval_cmd.add_argument("--k-values",)
-    eval_cmd.add_argument("--rag-dataset",)
-    eval_cmd.add_argument("--faiss-path",)
-    eval_cmd.add_argument("--index",)
-    eval_cmd.add_argument("--embedding-model",)
-    eval_cmd.add_argument("--alpha", type=float,)
+    eval_cmd.add_argument(
+        "--dataset",
+    )
+    eval_cmd.add_argument(
+        "--retriever",
+        choices=("semantic", "bm25", "hybrid"),
+    )
+    eval_cmd.add_argument(
+        "--k-values",
+    )
+    eval_cmd.add_argument(
+        "--rag-dataset",
+    )
+    eval_cmd.add_argument(
+        "--faiss-path",
+    )
+    eval_cmd.add_argument(
+        "--index",
+    )
+    eval_cmd.add_argument(
+        "--embedding-model",
+    )
+    eval_cmd.add_argument(
+        "--alpha",
+        type=float,
+    )
     eval_cmd.add_argument(
         "--hybrid-candidate-multiplier",
         type=int,
-
         help="Hybrid per-branch candidate pool multiplier before merge/rerank.",
     )
     eval_cmd.add_argument(
         "--hybrid-max-per-group",
         type=int,
-
         help="Max documents per source/section group in hybrid top-k (<=0 disables).",
     )
     eval_cmd.add_argument(
         "--hybrid-rrf-k",
         type=float,
-
         help="RRF k parameter used to fuse semantic and BM25 ranks.",
     )
     eval_cmd.add_argument("--rerank", action="store_true")
-    eval_cmd.add_argument("--reranker-model",)
-    eval_cmd.add_argument("--rerank-candidates", type=int,)
-    eval_cmd.add_argument("--rerank-alpha", type=float,)
+    eval_cmd.add_argument(
+        "--reranker-model",
+    )
+    eval_cmd.add_argument(
+        "--rerank-candidates",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--rerank-alpha",
+        type=float,
+    )
     eval_cmd.add_argument(
         "--rerank-top1-margin-lambda",
         type=float,
-
         help="Post-process top-1 score with lambda * (top1 - top2).",
     )
     eval_cmd.add_argument(
         "--ce-calibration",
         choices=("minmax", "softmax", "zscore"),
-
         help="How to normalize CE scores per query before fusion with prior scores.",
     )
     eval_cmd.add_argument(
         "--ce-temperature",
         type=float,
-
         help="Temperature for CE calibration modes (softmax/zscore). >1 flattens scores.",
     )
     eval_cmd.add_argument(
@@ -1452,11 +1587,16 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument(
         "--hard-negative-semantic-floor",
         type=float,
-
         help="Drop rerank candidates with normalized semantic score below threshold.",
     )
-    eval_cmd.add_argument("--rerank-semantic-weight", type=float,)
-    eval_cmd.add_argument("--rerank-bm25-weight", type=float,)
+    eval_cmd.add_argument(
+        "--rerank-semantic-weight",
+        type=float,
+    )
+    eval_cmd.add_argument(
+        "--rerank-bm25-weight",
+        type=float,
+    )
     eval_cmd.add_argument(
         "--two-stage-rerank",
         action="store_true",
@@ -1465,42 +1605,77 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument(
         "--prefilter-candidates",
         type=int,
-
         help="How many candidates to keep for stage-2 cross-encoder reranking.",
     )
     eval_cmd.add_argument("--multi-query", action="store_true")
-    eval_cmd.add_argument("--multi-query-variants", type=int,)
-    eval_cmd.add_argument("--multi-query-rrf-k", type=int,)
+    eval_cmd.add_argument(
+        "--multi-query-variants",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--multi-query-rrf-k",
+        type=int,
+    )
     eval_cmd.add_argument(
         "--multi-query-llm-expansion",
         action="store_true",
         help="Use LLM-based structured expansion (paraphrase + decomposition + concept queries).",
     )
-    eval_cmd.add_argument("--multi-query-llm-provider",)
-    eval_cmd.add_argument("--multi-query-llm-model",)
-    eval_cmd.add_argument("--multi-query-llm-api-base",)
-    eval_cmd.add_argument("--multi-query-llm-api-key",)
-    eval_cmd.add_argument("--multi-query-llm-timeout-seconds", type=int,)
-    eval_cmd.add_argument("--multi-query-llm-retries", type=int,)
-    eval_cmd.add_argument("--llm-config-path",)
+    eval_cmd.add_argument(
+        "--multi-query-llm-provider",
+    )
+    eval_cmd.add_argument(
+        "--multi-query-llm-model",
+    )
+    eval_cmd.add_argument(
+        "--multi-query-llm-api-base",
+    )
+    eval_cmd.add_argument(
+        "--multi-query-llm-api-key",
+    )
+    eval_cmd.add_argument(
+        "--multi-query-llm-timeout-seconds",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--multi-query-llm-retries",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--llm-config-path",
+    )
     eval_cmd.add_argument("--multi-query-llm-debug", action="store_true")
     eval_cmd.add_argument(
         "--retrieval-cache-enabled",
         action="store_true",
         help="Enable in-memory cache for retrieval query results.",
     )
-    eval_cmd.add_argument("--retrieval-cache-capacity", type=int,)
-    eval_cmd.add_argument("--retrieval-cache-ttl-seconds", type=float,)
+    eval_cmd.add_argument(
+        "--retrieval-cache-capacity",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--retrieval-cache-ttl-seconds",
+        type=float,
+    )
     eval_cmd.add_argument(
         "--llm-cache-enabled",
         action="store_true",
         help="Enable in-memory cache for LLM calls (query expansion / generation).",
     )
-    eval_cmd.add_argument("--llm-cache-capacity", type=int,)
-    eval_cmd.add_argument("--llm-cache-ttl-seconds", type=float,)
+    eval_cmd.add_argument(
+        "--llm-cache-capacity",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--llm-cache-ttl-seconds",
+        type=float,
+    )
     eval_cmd.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
     eval_cmd.add_argument("--log-path", help="Optional runtime log file path.")
-    eval_cmd.add_argument("--log-json", action="store_true", help="Emit runtime logs in JSON format.")
+    eval_cmd.add_argument(
+        "--log-json", action="store_true", help="Emit runtime logs in JSON format."
+    )
     eval_cmd.add_argument(
         "--soft-recall-rescue",
         action="store_true",
@@ -1509,13 +1684,11 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument(
         "--soft-recall-rescue-tail-k",
         type=int,
-
         help="How many BM25-only candidates to inject into reranker pool.",
     )
     eval_cmd.add_argument(
         "--soft-recall-rescue-bm25-depth",
         type=int,
-
         help="How deep to search BM25 before extracting BM25-only tail candidates.",
     )
     eval_cmd.add_argument(
@@ -1523,17 +1696,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Apply MMR diversity selection after fusion/rescue and before CE reranking.",
     )
-    eval_cmd.add_argument("--mmr-lambda", type=float,)
+    eval_cmd.add_argument(
+        "--mmr-lambda",
+        type=float,
+    )
     eval_cmd.add_argument(
         "--mmr-k",
         type=int,
-
         help="Candidate pool size kept after MMR (<=0 uses rerank candidate size).",
     )
     eval_cmd.add_argument(
         "--mmr-diversity-threshold",
         type=float,
-
         help="Optional hard max cosine similarity to selected docs (<=0 disables).",
     )
     eval_cmd.add_argument(
@@ -1544,89 +1718,185 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument(
         "--failure-near-miss-threshold",
         type=float,
-
         help="Similarity threshold used to classify failures as near_miss.",
     )
     eval_cmd.add_argument(
         "--failure-sample-size",
         type=int,
-
         help="Number of failed queries to include for manual inspection.",
     )
     eval_cmd.add_argument(
         "--export-reranker-train-jsonl",
-
         help="Optional path to export pairwise hard-negative reranker training dataset.",
     )
-    eval_cmd.add_argument("--reranker-train-max-negative-rank", type=int,)
-    eval_cmd.add_argument("--reranker-train-max-negatives", type=int,)
-    eval_cmd.add_argument("--reranker-train-weight-ranking-cutoff", type=float,)
-    eval_cmd.add_argument("--reranker-train-weight-true-recall", type=float,)
-    eval_cmd.add_argument("--reranker-train-weight-default", type=float,)
+    eval_cmd.add_argument(
+        "--reranker-train-max-negative-rank",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--reranker-train-max-negatives",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--reranker-train-weight-ranking-cutoff",
+        type=float,
+    )
+    eval_cmd.add_argument(
+        "--reranker-train-weight-true-recall",
+        type=float,
+    )
+    eval_cmd.add_argument(
+        "--reranker-train-weight-default",
+        type=float,
+    )
     eval_cmd.add_argument(
         "--train-reranker",
         action="store_true",
         help="Train reranker in the same run after exporting hard-negative dataset.",
     )
-    eval_cmd.add_argument("--train-reranker-model",)
-    eval_cmd.add_argument("--train-reranker-out-dir",)
-    eval_cmd.add_argument("--train-reranker-epochs", type=int,)
-    eval_cmd.add_argument("--train-reranker-batch-size", type=int,)
-    eval_cmd.add_argument("--train-reranker-warmup-steps", type=int,)
-    eval_cmd.add_argument("--train-reranker-val-ratio", type=float,)
-    eval_cmd.add_argument("--train-reranker-seed", type=int,)
-    eval_cmd.add_argument("--out-json",)
+    eval_cmd.add_argument(
+        "--train-reranker-model",
+    )
+    eval_cmd.add_argument(
+        "--train-reranker-out-dir",
+    )
+    eval_cmd.add_argument(
+        "--train-reranker-epochs",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--train-reranker-batch-size",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--train-reranker-warmup-steps",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--train-reranker-val-ratio",
+        type=float,
+    )
+    eval_cmd.add_argument(
+        "--train-reranker-seed",
+        type=int,
+    )
+    eval_cmd.add_argument(
+        "--out-json",
+    )
     eval_cmd.set_defaults(handler=cmd_evaluation_runner)
 
     rerank_pipeline_cmd = subparsers.add_parser(
         "reranker_pipeline",
         help="One-shot eval + failure dataset export + optional reranker training.",
     )
-    rerank_pipeline_cmd.add_argument("--dataset",)
-    rerank_pipeline_cmd.add_argument("--rag-dataset",)
-    rerank_pipeline_cmd.add_argument("--faiss-path",)
-    rerank_pipeline_cmd.add_argument("--index",)
-    rerank_pipeline_cmd.add_argument("--embedding-model",)
-    rerank_pipeline_cmd.add_argument("--reranker-model",)
+    rerank_pipeline_cmd.add_argument(
+        "--dataset",
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--rag-dataset",
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--faiss-path",
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--index",
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--embedding-model",
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--reranker-model",
+    )
     rerank_pipeline_cmd.add_argument(
         "--rerank-top1-margin-lambda",
         type=float,
-
         help="Post-process top-1 score with lambda * (top1 - top2).",
     )
-    rerank_pipeline_cmd.add_argument("--k-values",)
+    rerank_pipeline_cmd.add_argument(
+        "--k-values",
+    )
     rerank_pipeline_cmd.add_argument("--multi-query-llm-expansion", action="store_true")
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-provider",)
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-model",)
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-api-base",)
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-api-key",)
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-timeout-seconds", type=int,)
-    rerank_pipeline_cmd.add_argument("--multi-query-llm-retries", type=int,)
-    rerank_pipeline_cmd.add_argument("--llm-config-path",)
+    rerank_pipeline_cmd.add_argument(
+        "--multi-query-llm-provider",
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--multi-query-llm-model",
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--multi-query-llm-api-base",
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--multi-query-llm-api-key",
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--multi-query-llm-timeout-seconds",
+        type=int,
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--multi-query-llm-retries",
+        type=int,
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--llm-config-path",
+    )
     rerank_pipeline_cmd.add_argument("--multi-query-llm-debug", action="store_true")
     rerank_pipeline_cmd.add_argument("--retrieval-cache-enabled", action="store_true")
-    rerank_pipeline_cmd.add_argument("--retrieval-cache-capacity", type=int,)
-    rerank_pipeline_cmd.add_argument("--retrieval-cache-ttl-seconds", type=float,)
+    rerank_pipeline_cmd.add_argument(
+        "--retrieval-cache-capacity",
+        type=int,
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--retrieval-cache-ttl-seconds",
+        type=float,
+    )
     rerank_pipeline_cmd.add_argument("--llm-cache-enabled", action="store_true")
-    rerank_pipeline_cmd.add_argument("--llm-cache-capacity", type=int,)
-    rerank_pipeline_cmd.add_argument("--llm-cache-ttl-seconds", type=float,)
+    rerank_pipeline_cmd.add_argument(
+        "--llm-cache-capacity",
+        type=int,
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--llm-cache-ttl-seconds",
+        type=float,
+    )
     rerank_pipeline_cmd.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
-    rerank_pipeline_cmd.add_argument("--log-path",)
+    rerank_pipeline_cmd.add_argument(
+        "--log-path",
+    )
     rerank_pipeline_cmd.add_argument("--log-json", action="store_true")
-    rerank_pipeline_cmd.add_argument("--out-json",)
+    rerank_pipeline_cmd.add_argument(
+        "--out-json",
+    )
     rerank_pipeline_cmd.add_argument(
         "--export-reranker-train-jsonl",
-
         help="Path for exported reranker pairwise training dataset.",
     )
     rerank_pipeline_cmd.add_argument("--train-reranker", action="store_true")
-    rerank_pipeline_cmd.add_argument("--train-reranker-model",)
-    rerank_pipeline_cmd.add_argument("--train-reranker-out-dir",)
-    rerank_pipeline_cmd.add_argument("--train-reranker-epochs", type=int,)
-    rerank_pipeline_cmd.add_argument("--train-reranker-batch-size", type=int,)
-    rerank_pipeline_cmd.add_argument("--train-reranker-warmup-steps", type=int,)
-    rerank_pipeline_cmd.add_argument("--train-reranker-val-ratio", type=float,)
-    rerank_pipeline_cmd.add_argument("--train-reranker-seed", type=int,)
+    rerank_pipeline_cmd.add_argument(
+        "--train-reranker-model",
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--train-reranker-out-dir",
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--train-reranker-epochs",
+        type=int,
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--train-reranker-batch-size",
+        type=int,
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--train-reranker-warmup-steps",
+        type=int,
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--train-reranker-val-ratio",
+        type=float,
+    )
+    rerank_pipeline_cmd.add_argument(
+        "--train-reranker-seed",
+        type=int,
+    )
     rerank_pipeline_cmd.set_defaults(handler=cmd_reranker_pipeline)
 
     rag_cmd = subparsers.add_parser(
@@ -1634,33 +1904,80 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["run-rag"],
         help="Run full RAG query against selected LLM provider.",
     )
-    rag_cmd.add_argument("--question", "-q",)
+    rag_cmd.add_argument(
+        "--question",
+        "-q",
+    )
     rag_cmd.add_argument("--provider", choices=("openai", "gigachat", "ollama", "qwen"))
-    rag_cmd.add_argument("--model",)
-    rag_cmd.add_argument("--top-k", type=int,)
-    rag_cmd.add_argument("--max-context-tokens", type=int,)
-    rag_cmd.add_argument("--faiss-path",)
-    rag_cmd.add_argument("--index",)
-    rag_cmd.add_argument("--embedding-model",)
+    rag_cmd.add_argument(
+        "--model",
+    )
+    rag_cmd.add_argument(
+        "--top-k",
+        type=int,
+    )
+    rag_cmd.add_argument(
+        "--max-context-tokens",
+        type=int,
+    )
+    rag_cmd.add_argument(
+        "--faiss-path",
+    )
+    rag_cmd.add_argument(
+        "--index",
+    )
+    rag_cmd.add_argument(
+        "--embedding-model",
+    )
     rag_cmd.add_argument("--stream", action="store_true")
-    rag_cmd.add_argument("--max-tokens", type=int,)
-    rag_cmd.add_argument("--temperature", type=float,)
-    rag_cmd.add_argument("--top-p", type=float,)
+    rag_cmd.add_argument(
+        "--max-tokens",
+        type=int,
+    )
+    rag_cmd.add_argument(
+        "--temperature",
+        type=float,
+    )
+    rag_cmd.add_argument(
+        "--top-p",
+        type=float,
+    )
     rag_cmd.add_argument("--rerank", action="store_true")
-    rag_cmd.add_argument("--reranker-model",)
-    rag_cmd.add_argument("--rerank-candidates", type=int,)
+    rag_cmd.add_argument(
+        "--reranker-model",
+    )
+    rag_cmd.add_argument(
+        "--rerank-candidates",
+        type=int,
+    )
     rag_cmd.add_argument("--llm-cache-enabled", action="store_true")
-    rag_cmd.add_argument("--llm-cache-capacity", type=int,)
-    rag_cmd.add_argument("--llm-cache-ttl-seconds", type=float,)
+    rag_cmd.add_argument(
+        "--llm-cache-capacity",
+        type=int,
+    )
+    rag_cmd.add_argument(
+        "--llm-cache-ttl-seconds",
+        type=float,
+    )
     rag_cmd.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
     rag_cmd.add_argument("--log-path", help="Optional runtime log file path.")
-    rag_cmd.add_argument("--log-json", action="store_true", help="Emit runtime logs in JSON format.")
-    rag_cmd.add_argument("--llm-config-path",)
+    rag_cmd.add_argument(
+        "--log-json", action="store_true", help="Emit runtime logs in JSON format."
+    )
+    rag_cmd.add_argument(
+        "--llm-config-path",
+    )
     rag_cmd.set_defaults(handler=cmd_run_rag)
 
-    clean_cmd = subparsers.add_parser("cleanup_faiss", help="Delete FAISS index and optionally full directory.")
-    clean_cmd.add_argument("--faiss-path",)
-    clean_cmd.add_argument("--index",)
+    clean_cmd = subparsers.add_parser(
+        "cleanup_faiss", help="Delete FAISS index and optionally full directory."
+    )
+    clean_cmd.add_argument(
+        "--faiss-path",
+    )
+    clean_cmd.add_argument(
+        "--index",
+    )
     clean_cmd.add_argument("--drop-persist-directory", action="store_true")
     clean_cmd.set_defaults(handler=cmd_cleanup_faiss)
 
@@ -1671,7 +1988,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_faiss_cmd.add_argument(
         "--input-jsonl",
-
         help="Embeddings input JSONL with id/text records.",
     )
     build_faiss_cmd.add_argument(
@@ -1681,12 +1997,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_faiss_cmd.add_argument(
         "--rag-dataset",
-
         help="RAG dataset used when --prepare-input is enabled.",
     )
-    build_faiss_cmd.add_argument("--faiss-path",)
-    build_faiss_cmd.add_argument("--index",)
-    build_faiss_cmd.add_argument("--embedding-model",)
+    build_faiss_cmd.add_argument(
+        "--faiss-path",
+    )
+    build_faiss_cmd.add_argument(
+        "--index",
+    )
+    build_faiss_cmd.add_argument(
+        "--embedding-model",
+    )
     build_faiss_cmd.set_defaults(handler=cmd_build_faiss)
 
     build_eval_cmd = subparsers.add_parser(
@@ -1694,19 +2015,51 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["build-eval-dataset"],
         help="Build structured evaluation JSONL from eval JSON and rag dataset.",
     )
-    build_eval_cmd.add_argument("--rag",)
-    build_eval_cmd.add_argument("--eval",)
-    build_eval_cmd.add_argument("--out",)
-    build_eval_cmd.add_argument("--fuzzy-ratio", type=float,)
-    build_eval_cmd.add_argument("--lexical-min-hits", type=int,)
-    build_eval_cmd.add_argument("--max-chunk-ids", type=int,)
+    build_eval_cmd.add_argument(
+        "--rag",
+    )
+    build_eval_cmd.add_argument(
+        "--eval",
+    )
+    build_eval_cmd.add_argument(
+        "--out",
+    )
+    build_eval_cmd.add_argument(
+        "--fuzzy-ratio",
+        type=float,
+    )
+    build_eval_cmd.add_argument(
+        "--lexical-min-hits",
+        type=int,
+    )
+    build_eval_cmd.add_argument(
+        "--max-chunk-ids",
+        type=int,
+    )
     build_eval_cmd.add_argument("--no-semantic-fallback", action="store_true")
-    build_eval_cmd.add_argument("--semantic-model",)
-    build_eval_cmd.add_argument("--semantic-min-score", type=float,)
-    build_eval_cmd.add_argument("--max-gt-url-share", type=float,)
-    build_eval_cmd.add_argument("--target-multi-gt-share", type=float,)
-    build_eval_cmd.add_argument("--keep-max-ids-for-multi", type=int,)
-    build_eval_cmd.add_argument("--excerpt-max", type=int,)
+    build_eval_cmd.add_argument(
+        "--semantic-model",
+    )
+    build_eval_cmd.add_argument(
+        "--semantic-min-score",
+        type=float,
+    )
+    build_eval_cmd.add_argument(
+        "--max-gt-url-share",
+        type=float,
+    )
+    build_eval_cmd.add_argument(
+        "--target-multi-gt-share",
+        type=float,
+    )
+    build_eval_cmd.add_argument(
+        "--keep-max-ids-for-multi",
+        type=int,
+    )
+    build_eval_cmd.add_argument(
+        "--excerpt-max",
+        type=int,
+    )
     build_eval_cmd.set_defaults(handler=cmd_build_evaluation_dataset)
 
     audit_cmd = subparsers.add_parser(
@@ -1714,9 +2067,15 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["audit-dataset"],
         help="Audit rag/evaluation datasets and print quality report.",
     )
-    audit_cmd.add_argument("--rag",)
-    audit_cmd.add_argument("--eval",)
-    audit_cmd.add_argument("--out",)
+    audit_cmd.add_argument(
+        "--rag",
+    )
+    audit_cmd.add_argument(
+        "--eval",
+    )
+    audit_cmd.add_argument(
+        "--out",
+    )
     audit_cmd.set_defaults(handler=cmd_dataset_audit)
 
     build_reranker_ds_cmd = subparsers.add_parser(
@@ -1724,14 +2083,35 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["build-reranker-dataset"],
         help="Build context-aware reranker training JSONL from retrieval report.",
     )
-    build_reranker_ds_cmd.add_argument("--eval-report",)
-    build_reranker_ds_cmd.add_argument("--rag-dataset",)
-    build_reranker_ds_cmd.add_argument("--out",)
-    build_reranker_ds_cmd.add_argument("--max-negative-rank", type=int,)
-    build_reranker_ds_cmd.add_argument("--max-negatives", type=int,)
-    build_reranker_ds_cmd.add_argument("--ranking-cutoff-weight", type=float,)
-    build_reranker_ds_cmd.add_argument("--true-recall-weight", type=float,)
-    build_reranker_ds_cmd.add_argument("--default-weight", type=float,)
+    build_reranker_ds_cmd.add_argument(
+        "--eval-report",
+    )
+    build_reranker_ds_cmd.add_argument(
+        "--rag-dataset",
+    )
+    build_reranker_ds_cmd.add_argument(
+        "--out",
+    )
+    build_reranker_ds_cmd.add_argument(
+        "--max-negative-rank",
+        type=int,
+    )
+    build_reranker_ds_cmd.add_argument(
+        "--max-negatives",
+        type=int,
+    )
+    build_reranker_ds_cmd.add_argument(
+        "--ranking-cutoff-weight",
+        type=float,
+    )
+    build_reranker_ds_cmd.add_argument(
+        "--true-recall-weight",
+        type=float,
+    )
+    build_reranker_ds_cmd.add_argument(
+        "--default-weight",
+        type=float,
+    )
     build_reranker_ds_cmd.set_defaults(handler=cmd_build_reranker_dataset)
 
     train_reranker_cmd = subparsers.add_parser(
@@ -1739,15 +2119,38 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["train-reranker"],
         help="Fine-tune cross-encoder reranker on context dataset.",
     )
-    train_reranker_cmd.add_argument("--train-jsonl",)
-    train_reranker_cmd.add_argument("--rag-dataset",)
-    train_reranker_cmd.add_argument("--model",)
-    train_reranker_cmd.add_argument("--out-dir",)
-    train_reranker_cmd.add_argument("--epochs", type=int,)
-    train_reranker_cmd.add_argument("--batch-size", type=int,)
-    train_reranker_cmd.add_argument("--warmup-steps", type=int,)
-    train_reranker_cmd.add_argument("--val-ratio", type=float,)
-    train_reranker_cmd.add_argument("--seed", type=int,)
+    train_reranker_cmd.add_argument(
+        "--train-jsonl",
+    )
+    train_reranker_cmd.add_argument(
+        "--rag-dataset",
+    )
+    train_reranker_cmd.add_argument(
+        "--model",
+    )
+    train_reranker_cmd.add_argument(
+        "--out-dir",
+    )
+    train_reranker_cmd.add_argument(
+        "--epochs",
+        type=int,
+    )
+    train_reranker_cmd.add_argument(
+        "--batch-size",
+        type=int,
+    )
+    train_reranker_cmd.add_argument(
+        "--warmup-steps",
+        type=int,
+    )
+    train_reranker_cmd.add_argument(
+        "--val-ratio",
+        type=float,
+    )
+    train_reranker_cmd.add_argument(
+        "--seed",
+        type=int,
+    )
     train_reranker_cmd.set_defaults(handler=cmd_train_reranker)
 
     experiments_cmd = subparsers.add_parser(
@@ -1755,15 +2158,36 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["run-experiments"],
         help="Run RAG answer comparison across configured LLM providers.",
     )
-    experiments_cmd.add_argument("--question", "-q",)
-    experiments_cmd.add_argument("--models",)
-    experiments_cmd.add_argument("--top-k", type=int,)
-    experiments_cmd.add_argument("--max-context-tokens", type=int,)
-    experiments_cmd.add_argument("--faiss-path",)
-    experiments_cmd.add_argument("--index",)
-    experiments_cmd.add_argument("--embedding-model",)
-    experiments_cmd.add_argument("--log-path",)
-    experiments_cmd.add_argument("--llm-config-path",)
+    experiments_cmd.add_argument(
+        "--question",
+        "-q",
+    )
+    experiments_cmd.add_argument(
+        "--models",
+    )
+    experiments_cmd.add_argument(
+        "--top-k",
+        type=int,
+    )
+    experiments_cmd.add_argument(
+        "--max-context-tokens",
+        type=int,
+    )
+    experiments_cmd.add_argument(
+        "--faiss-path",
+    )
+    experiments_cmd.add_argument(
+        "--index",
+    )
+    experiments_cmd.add_argument(
+        "--embedding-model",
+    )
+    experiments_cmd.add_argument(
+        "--log-path",
+    )
+    experiments_cmd.add_argument(
+        "--llm-config-path",
+    )
     experiments_cmd.set_defaults(handler=cmd_run_experiments)
 
     return parser

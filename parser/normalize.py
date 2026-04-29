@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 NOISE_PATTERNS = [
     r"cookie(s)?\s+policy",
     r"accept\s+all\s+cookies",
@@ -31,4 +30,3 @@ def is_noise(line: str) -> bool:
     """Check whether a line matches configured boilerplate noise patterns."""
     lowered = line.lower()
     return any(re.search(pattern, lowered) for pattern in NOISE_PATTERNS)
-

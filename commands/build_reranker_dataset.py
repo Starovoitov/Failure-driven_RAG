@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from pydantic import BaseModel
-from ingestion.loaders import load_chunk_texts
+
 from utils.common import rank_weight
 
 
@@ -228,4 +226,3 @@ def build_contexts(
         _update_context_bucket_stats(stats, bucket)
 
     return [item.model_dump() for item in contexts], stats.model_dump()
-

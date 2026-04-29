@@ -32,12 +32,18 @@ def chunk_text(
     if len(tokens) <= max_tokens:
         return [" ".join(tokens)]
     if mode == "semantic_dynamic":
-        return _chunk_text_semantic_dynamic(text, min_tokens=min_tokens, max_tokens=max_tokens, overlap_ratio=overlap_ratio)
+        return _chunk_text_semantic_dynamic(
+            text, min_tokens=min_tokens, max_tokens=max_tokens, overlap_ratio=overlap_ratio
+        )
 
-    return _chunk_text_token(tokens, min_tokens=min_tokens, max_tokens=max_tokens, overlap_ratio=overlap_ratio)
+    return _chunk_text_token(
+        tokens, min_tokens=min_tokens, max_tokens=max_tokens, overlap_ratio=overlap_ratio
+    )
 
 
-def _chunk_text_token(tokens: list[str], min_tokens: int, max_tokens: int, overlap_ratio: float) -> list[str]:
+def _chunk_text_token(
+    tokens: list[str], min_tokens: int, max_tokens: int, overlap_ratio: float
+) -> list[str]:
     step = max(1, int(max_tokens * (1 - overlap_ratio)))
     overlap = max_tokens - step
     if overlap < int(max_tokens * 0.1):
@@ -74,7 +80,12 @@ def _chunk_text_semantic_dynamic(
 ) -> list[str]:
     units = _semantic_units(text)
     if not units:
-        return _chunk_text_token(tokenize(text), min_tokens=min_tokens, max_tokens=max_tokens, overlap_ratio=overlap_ratio)
+        return _chunk_text_token(
+            tokenize(text),
+            min_tokens=min_tokens,
+            max_tokens=max_tokens,
+            overlap_ratio=overlap_ratio,
+        )
 
     chunks: list[str] = []
     buffer: list[str] = []
@@ -92,7 +103,12 @@ def _chunk_text_semantic_dynamic(
             if buffer:
                 chunks.append(" ".join(buffer))
                 buffer, buf_tokens = [], 0
-            sub_chunks = _chunk_text_token(unit_tokens, min_tokens=min_tokens, max_tokens=max_tokens, overlap_ratio=overlap_ratio)
+            sub_chunks = _chunk_text_token(
+                unit_tokens,
+                min_tokens=min_tokens,
+                max_tokens=max_tokens,
+                overlap_ratio=overlap_ratio,
+            )
             chunks.extend(sub_chunks)
             continue
 
@@ -125,7 +141,11 @@ def _semantic_units(text: str) -> list[str]:
     blocks = [b.strip() for b in re.split(r"\n{2,}", compact) if b and b.strip()]
     units: list[str] = []
     for block in blocks:
-        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+|(?<=:)\s+|(?=\s*[-*•]\s)", block) if s and s.strip()]
+        sentences = [
+            s.strip()
+            for s in re.split(r"(?<=[.!?])\s+|(?<=:)\s+|(?=\s*[-*•]\s)", block)
+            if s and s.strip()
+        ]
         if sentences:
             units.extend(sentences)
         else:
@@ -135,7 +155,9 @@ def _semantic_units(text: str) -> list[str]:
 
 def _dynamic_max_tokens(unit: str) -> int:
     # Short procedural/list fragments should remain compact.
-    if re.search(r"(^|\s)(step|steps|example|checklist|api|parameter|option)s?($|\s)", unit.lower()):
+    if re.search(
+        r"(^|\s)(step|steps|example|checklist|api|parameter|option)s?($|\s)", unit.lower()
+    ):
         return 220
     if re.search(r"(^|\s)[-*•]\s", unit):
         return 200
@@ -171,4 +193,3 @@ def jaccard_similarity_tokens(text_a: str, text_b: str) -> float:
     if not ta or not tb:
         return 0.0
     return len(ta & tb) / len(ta | tb)
-

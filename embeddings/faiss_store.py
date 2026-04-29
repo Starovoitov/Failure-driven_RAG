@@ -10,7 +10,6 @@ import numpy as np
 
 from retrieval.semantic import SemanticDocument
 
-
 INDEX_FILENAME = "vectors.index"
 STORE_FILENAME = "store.json"
 

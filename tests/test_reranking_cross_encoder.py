@@ -50,7 +50,9 @@ class TestRerankingCrossEncoder(unittest.TestCase):
         from reranking.cross_encoder import CrossEncoderReranker, RerankCandidate
 
         rr = CrossEncoderReranker(model_name="dummy")
-        results = rr.rerank(query="q", candidates=[RerankCandidate(doc_id="a", text="alpha")], top_k=0)
+        results = rr.rerank(
+            query="q", candidates=[RerankCandidate(doc_id="a", text="alpha")], top_k=0
+        )
         self.assertEqual(results, [])
 
     def test_rerank_filters_blank_text_candidates(self) -> None:
@@ -59,7 +61,10 @@ class TestRerankingCrossEncoder(unittest.TestCase):
         rr = CrossEncoderReranker(model_name="dummy")
         results = rr.rerank(
             query="q",
-            candidates=[RerankCandidate(doc_id="a", text="   "), RerankCandidate(doc_id="b", text="beta")],
+            candidates=[
+                RerankCandidate(doc_id="a", text="   "),
+                RerankCandidate(doc_id="b", text="beta"),
+            ],
             top_k=5,
         )
         self.assertEqual(len(results), 1)
@@ -68,4 +73,3 @@ class TestRerankingCrossEncoder(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

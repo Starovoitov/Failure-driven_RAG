@@ -110,10 +110,19 @@ def entity_concept_variants(base: str) -> list[str]:
                 "context overload reduces answer quality",
             ],
         ),
-        ("evaluation", ["faithfulness", "groundedness", "answer relevance", "retrieval quality metrics"]),
+        (
+            "evaluation",
+            ["faithfulness", "groundedness", "answer relevance", "retrieval quality metrics"],
+        ),
         ("metrics", ["mrr ndcg recall at k", "ranking quality diagnostics"]),
-        ("recall", ["retrieval coverage", "candidate pool expansion", "bm25 dense recall tradeoff"]),
-        ("hybrid", ["bm25 dense fusion", "rrf hybrid retrieval", "branch-specific retrieval misses"]),
+        (
+            "recall",
+            ["retrieval coverage", "candidate pool expansion", "bm25 dense recall tradeoff"],
+        ),
+        (
+            "hybrid",
+            ["bm25 dense fusion", "rrf hybrid retrieval", "branch-specific retrieval misses"],
+        ),
         ("rerank", ["cross encoder reranking optimization", "hard negative reranker training"]),
         ("rag", ["retriever generator grounding", "evidence grounded answering"]),
     )
@@ -270,8 +279,12 @@ def llm_structured_query_expansion_batch(
         if not query:
             continue
         paraphrases = dedupe_query_variants([str(x).strip() for x in item.get("paraphrases", [])])
-        decompositions = dedupe_query_variants([str(x).strip() for x in item.get("decompositions", [])])
-        concepts = dedupe_query_variants([str(x).strip() for x in item.get("concept_expansions", [])])
+        decompositions = dedupe_query_variants(
+            [str(x).strip() for x in item.get("decompositions", [])]
+        )
+        concepts = dedupe_query_variants(
+            [str(x).strip() for x in item.get("concept_expansions", [])]
+        )
         result[query] = (paraphrases, decompositions, concepts)
     return result
 

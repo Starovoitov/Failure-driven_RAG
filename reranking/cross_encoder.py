@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from enum import StrEnum
 import math
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 from sentence_transformers import CrossEncoder
-from utils.common import min_max_normalize
 
+from utils.common import min_max_normalize
 
 DEFAULT_CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
@@ -25,7 +25,9 @@ def calibrate_ce_scores(
 ) -> list[float]:
     t = max(temperature, 1e-6)
     if mode == CEScoreCalibrationMode.MINMAX:
-        normalized = min_max_normalize({str(i): score for i, score in enumerate(scores)}, epsilon=1e-6)
+        normalized = min_max_normalize(
+            {str(i): score for i, score in enumerate(scores)}, epsilon=1e-6
+        )
         return [normalized[str(i)] for i in range(len(scores))]
     if mode == CEScoreCalibrationMode.SOFTMAX:
         shifted = [score / t for score in scores]
@@ -111,7 +113,9 @@ class CrossEncoderReranker:
             else CEScoreCalibrationMode(ce_calibration)
         )
         ce_norm = calibrate_ce_scores(ce_scores, calibration_mode, ce_temperature)
-        base_norm_map = min_max_normalize({str(i): score for i, score in enumerate(base_scores)}, epsilon=1e-6)
+        base_norm_map = min_max_normalize(
+            {str(i): score for i, score in enumerate(base_scores)}, epsilon=1e-6
+        )
         base_norm = [base_norm_map[str(i)] for i in range(len(base_scores))]
 
         reranked = []
@@ -121,6 +125,7 @@ class CrossEncoderReranker:
             base_scores,
             ce_norm,
             base_norm,
+            strict=False,
         ):
             combined = (alpha * ce_score_norm) + ((1.0 - alpha) * base_score_norm)
 

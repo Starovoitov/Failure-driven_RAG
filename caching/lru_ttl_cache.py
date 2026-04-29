@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections import OrderedDict
 import time
+from collections import OrderedDict
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel
@@ -185,4 +185,3 @@ class LRUTTLCache(Generic[K, V]):
 
     def __len__(self) -> int:
         return len(self._entries)
-

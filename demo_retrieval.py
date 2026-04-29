@@ -6,7 +6,8 @@ Usage from project root:
   poetry run python demo_retrieval.py
   poetry run python demo_retrieval.py --query "how does caching work"
   poetry run python demo_retrieval.py --query "how does caching work" --model intfloat/e5-base-v2
-  poetry run python demo_retrieval.py --query "how does caching work" --model intfloat/e5-base-v2 --rerank --reranker-model cross-encoder/ms-marco-MiniLM-L-6-v2
+  poetry run python demo_retrieval.py --query "how does caching work"
+    --model intfloat/e5-base-v2 --rerank --reranker-model cross-encoder/ms-marco-MiniLM-L-6-v2
 
 Important distinction vs `main.py run_rag`:
 - This script is retrieval-only (diagnostics). It does NOT call an LLM to generate an answer.
@@ -15,8 +16,11 @@ Important distinction vs `main.py run_rag`:
   `--embedding-model`.
 
 `main.py run_rag` examples:
-  poetry run python main.py run_rag --question "how does caching work" --provider qwen --model qwen-plus --embedding-model intfloat/e5-base-v2
-  poetry run python main.py run_rag --question "how does caching work" --provider openai --model gpt-4o-mini --embedding-model intfloat/e5-base-v2
+  poetry run python main.py run_rag --question "how does caching work" --provider qwen -
+    -model qwen-plus --embedding-model intfloat/e5-base-v2
+
+  poetry run python main.py run_rag --question "how does caching work" --provider openai
+    --model gpt-4o-mini --embedding-model intfloat/e5-base-v2
 """
 
 from __future__ import annotations
@@ -123,7 +127,9 @@ def run_demo(
 
     print_block("BM25 (lexical)", bm25_results[:top_k])
     print_block("Semantic (cosine)", semantic_results[:top_k])
-    print_block("Hybrid (RRF fusion: alpha * semantic_rrf + (1-alpha) * bm25_rrf)", hybrid_results[:top_k])
+    print_block(
+        "Hybrid (RRF fusion: alpha * semantic_rrf + (1-alpha) * bm25_rrf)", hybrid_results[:top_k]
+    )
     if rerank:
         print_block("Cross-encoder reranked (over hybrid candidates)", reranked_results)
 
@@ -134,35 +140,29 @@ def main() -> None:
     parser.add_argument(
         "--query",
         "-q",
-
         help="Search query text.",
     )
     parser.add_argument(
         "--top-k",
         "-k",
         type=int,
-
         help="Number of hits to show per method.",
     )
     parser.add_argument(
         "--model",
         "-m",
-
         help=f"Sentence-transformers model name (default: {DEFAULT_MODEL}).",
     )
     parser.add_argument(
         "--dataset",
-
         help="Dataset JSONL created by parser pipeline.",
     )
     parser.add_argument(
         "--faiss-path",
-
         help="Persistent FAISS directory containing chunk embeddings.",
     )
     parser.add_argument(
         "--index",
-
         help="FAISS index name with precomputed embeddings.",
     )
     parser.add_argument(
@@ -172,19 +172,21 @@ def main() -> None:
     )
     parser.add_argument(
         "--reranker-model",
-
         help="Cross-encoder model name used when --rerank is enabled.",
     )
     parser.add_argument(
         "--rerank-candidates",
         type=int,
-
         help="How many hybrid candidates to rerank before trimming to top-k.",
     )
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config")
     pre_args, _ = pre_parser.parse_known_args(sys.argv[1:])
-    config_path = Path(pre_args.config).expanduser() if pre_args.config else (Path.cwd() / "cli.defaults.json")
+    config_path = (
+        Path(pre_args.config).expanduser()
+        if pre_args.config
+        else (Path.cwd() / "cli.defaults.json")
+    )
     if not config_path.is_absolute():
         config_path = Path.cwd() / config_path
     parser.set_defaults(**load_script_defaults(config_path, "demo_retrieval"))
@@ -200,4 +202,3 @@ def main() -> None:
         reranker_model=args.reranker_model,
         rerank_candidates=args.rerank_candidates,
     )
-

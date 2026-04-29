@@ -3,13 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pydantic import BaseModel
 from pathlib import Path
 from typing import Protocol
 
-from caching import LRUTTLCache
+from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
+from caching import LRUTTLCache
 from evaluation.dataset import EvalSample, load_eval_samples
 from evaluation.metrics import RetrievalResult, evaluate_retrieval
 from ingestion.loaders import load_bm25_documents_from_dataset, load_semantic_documents_from_faiss
@@ -27,8 +27,7 @@ def _retrieval_cache_key(query: str, top_k: int) -> str:
 
 
 class Retriever(Protocol):
-    def search(self, query: str, top_k: int) -> list[str]:
-        ...
+    def search(self, query: str, top_k: int) -> list[str]: ...
 
 
 class QueryRun(BaseModel):
@@ -69,7 +68,9 @@ class SemanticRetriever:
 
 
 class BM25Retriever:
-    def __init__(self, index: BM25Index, *, query_cache: LRUTTLCache[str, list[str]] | None = None) -> None:
+    def __init__(
+        self, index: BM25Index, *, query_cache: LRUTTLCache[str, list[str]] | None = None
+    ) -> None:
         self.index = index
         self.query_cache = query_cache
 
@@ -156,7 +157,9 @@ def build_retriever(
             cleanup_interval_seconds=30.0,
         )
     if mode == "semantic":
-        docs = load_semantic_documents_from_faiss(persist_directory=faiss_path, index_name=index_name)
+        docs = load_semantic_documents_from_faiss(
+            persist_directory=faiss_path, index_name=index_name
+        )
         if not docs:
             raise ValueError(f"No semantic docs in FAISS index '{index_name}' at '{faiss_path}'.")
         return SemanticRetriever(docs, embedding_model=embedding_model, query_cache=query_cache)
@@ -173,7 +176,9 @@ def build_retriever(
     if mode == "bm25":
         return BM25Retriever(index=bm25_index, query_cache=query_cache)
     if mode == "hybrid":
-        semantic_docs = load_semantic_documents_from_faiss(persist_directory=faiss_path, index_name=index_name)
+        semantic_docs = load_semantic_documents_from_faiss(
+            persist_directory=faiss_path, index_name=index_name
+        )
         if not semantic_docs:
             raise ValueError(f"No semantic docs in FAISS index '{index_name}' at '{faiss_path}'.")
         semantic = SemanticRetriever(semantic_docs, embedding_model=embedding_model)
@@ -226,24 +231,49 @@ def parse_k_values(raw: str) -> list[int]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run retrieval benchmark on evaluation dataset.")
     parser.add_argument("--config", help="Path to CLI defaults JSON.")
-    parser.add_argument("--dataset",)
-    parser.add_argument("--retriever", choices=("semantic", "bm25", "hybrid"),)
-    parser.add_argument("--k-values",)
-    parser.add_argument("--rag-dataset",)
-    parser.add_argument("--faiss-path",)
-    parser.add_argument("--index",)
-    parser.add_argument("--embedding-model",)
+    parser.add_argument(
+        "--dataset",
+    )
+    parser.add_argument(
+        "--retriever",
+        choices=("semantic", "bm25", "hybrid"),
+    )
+    parser.add_argument(
+        "--k-values",
+    )
+    parser.add_argument(
+        "--rag-dataset",
+    )
+    parser.add_argument(
+        "--faiss-path",
+    )
+    parser.add_argument(
+        "--index",
+    )
+    parser.add_argument(
+        "--embedding-model",
+    )
     parser.add_argument("--alpha", type=float, help="Hybrid semantic/BM25 mix.")
     parser.add_argument("--retrieval-cache-enabled", action="store_true")
-    parser.add_argument("--retrieval-cache-capacity", type=int,)
-    parser.add_argument("--retrieval-cache-ttl-seconds", type=float,)
+    parser.add_argument(
+        "--retrieval-cache-capacity",
+        type=int,
+    )
+    parser.add_argument(
+        "--retrieval-cache-ttl-seconds",
+        type=float,
+    )
     parser.add_argument("--rerank", action="store_true", help="Apply cross-encoder reranking.")
-    parser.add_argument("--reranker-model",)
-    parser.add_argument("--rerank-candidates", type=int,)
+    parser.add_argument(
+        "--reranker-model",
+    )
+    parser.add_argument(
+        "--rerank-candidates",
+        type=int,
+    )
     parser.add_argument(
         "--rerank-top1-margin-lambda",
         type=float,
-
         help="Post-process top-1 score with lambda * (top1 - top2).",
     )
     parser.add_argument(
@@ -255,7 +285,11 @@ def main() -> None:
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config")
     pre_args, _ = pre_parser.parse_known_args(sys.argv[1:])
-    config_path = Path(pre_args.config).expanduser() if pre_args.config else (Path.cwd() / "cli.defaults.json")
+    config_path = (
+        Path(pre_args.config).expanduser()
+        if pre_args.config
+        else (Path.cwd() / "cli.defaults.json")
+    )
     if not config_path.is_absolute():
         config_path = Path.cwd() / config_path
     parser.set_defaults(**load_script_defaults(config_path, "evaluation_runner"))
@@ -323,7 +357,11 @@ def main() -> None:
         else:
             retrieved = retrieved[:max_k]
         query_runs.append(
-            QueryRun(query=sample.query, relevant_doc_ids=sample.relevant_docs, retrieved_doc_ids=retrieved)
+            QueryRun(
+                query=sample.query,
+                relevant_doc_ids=sample.relevant_docs,
+                retrieved_doc_ids=retrieved,
+            )
         )
         metric_inputs.append(
             RetrievalResult(
@@ -364,4 +402,3 @@ def main() -> None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"Saved JSON report to {out_path}")
-

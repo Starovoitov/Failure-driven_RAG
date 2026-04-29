@@ -5,7 +5,7 @@ import random
 from pathlib import Path
 
 from sentence_transformers import InputExample
-from ingestion.loaders import load_chunk_texts
+
 
 def load_pairwise_samples(
     path: Path,
@@ -14,7 +14,9 @@ def load_pairwise_samples(
     val_ratio: float,
     chunk_texts: dict[str, str],
 ) -> tuple[list[InputExample], list[InputExample]]:
-    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
     random.Random(seed).shuffle(rows)
 
     examples: list[InputExample] = []
@@ -59,4 +61,3 @@ def load_pairwise_samples(
     val_examples = examples[:val_size]
     train_examples = examples[val_size:]
     return train_examples, val_examples
-

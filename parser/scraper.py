@@ -4,6 +4,7 @@ import re
 import time
 
 import requests
+
 try:
     import trafilatura
 except ModuleNotFoundError:  # pragma: no cover
@@ -33,7 +34,7 @@ def scrape_source(source: SourceSpec, timeout: int = 20, max_retries: int = 3) -
         except requests.RequestException as exc:
             last_error = exc
         if attempt < max_retries - 1:
-            time.sleep(2 ** attempt)
+            time.sleep(2**attempt)
 
     if response is None or response.status_code != 200:
         if last_error is not None:
@@ -65,10 +66,7 @@ def extract_title(html: str, default: str) -> str:
 
 def fallback_clean_html(html: str) -> str:
     """Convert raw HTML into plain text when structured extraction fails."""
-    no_script = re.sub(
-        r"<(script|style).*?>.*?</\1>", " ", html, flags=re.IGNORECASE | re.DOTALL
-    )
+    no_script = re.sub(r"<(script|style).*?>.*?</\1>", " ", html, flags=re.IGNORECASE | re.DOTALL)
     no_tags = re.sub(r"<[^>]+>", " ", no_script)
     no_entities = re.sub(r"&[a-zA-Z0-9#]+;", " ", no_tags)
     return " ".join(no_entities.split()).strip()
-

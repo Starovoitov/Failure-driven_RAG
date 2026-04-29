@@ -10,15 +10,36 @@
 ### Install dependencies
 
 ```bash
-poetry install
+make install
 ```
 
 If needed, select Python 3.12 explicitly for this project:
 
 ```bash
 poetry env use python3.12
-poetry install
+make install
 ```
+
+### Lint and formatting checks
+
+Run formatter/linter checks:
+
+```bash
+make lint
+```
+
+Apply formatting and autofixes:
+
+```bash
+make fix
+```
+
+Formatting and linting are configured with:
+
+- `black`
+- `ruff`
+
+For local development details, see `docs/development.md`.
 
 ### Run tests
 

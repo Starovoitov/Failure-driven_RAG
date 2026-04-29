@@ -5,7 +5,6 @@ import uuid
 
 from parser.models import QAPairRecord
 
-
 QUESTION_TEMPLATES = [
     "What is {topic} in RAG?",
     "Why is {topic} important for retrieval quality?",
@@ -44,4 +43,3 @@ def summarize_for_answer(text: str, max_chars: int = 240) -> str:
     if len(compact) <= max_chars:
         return compact
     return compact[: max_chars - 1].rstrip() + "..."
-

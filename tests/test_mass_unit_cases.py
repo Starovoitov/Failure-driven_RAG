@@ -75,7 +75,9 @@ for idx in range(20):
     expected_default = ["Token", "-", str(idx), ",", "VALUE", str(idx), "!"]
     expected_bm25 = ["token", str(idx), "value", str(idx)]
 
-    def _tokenize_test(self, text=text, expected_default=expected_default, expected_bm25=expected_bm25):
+    def _tokenize_test(
+        self, text=text, expected_default=expected_default, expected_bm25=expected_bm25
+    ):
         self.assertEqual(tokenize(text), expected_default)
         self.assertEqual(tokenize(text, for_bm25=True), expected_bm25)
 
@@ -111,7 +113,11 @@ for idx in range(5):
         self.assertIn("Valid text", context)
         self.assertNotIn("empty", context)
 
-    _add_test(TestGenerationPromptMass, f"test_context_skips_blank_case_{idx:03d}", _context_skip_blank_test)
+    _add_test(
+        TestGenerationPromptMass,
+        f"test_context_skips_blank_case_{idx:03d}",
+        _context_skip_blank_test,
+    )
 
 
 # 5 tests: build_rag_messages includes guardrail and uses requested question text.
@@ -120,7 +126,9 @@ for idx in range(5):
     chunks = [SourceChunk(doc_id=f"d{idx}", text=f"Answer fragment {idx}", score=1.0)]
 
     def _build_messages_test(self, question=question, chunks=chunks):
-        payload = build_rag_messages(question=question, chunks=chunks, top_k=1, max_context_tokens=200)
+        payload = build_rag_messages(
+            question=question, chunks=chunks, top_k=1, max_context_tokens=200
+        )
         self.assertIn("Additional guardrail", payload["system_prompt"])
         self.assertIn(question, payload["user_prompt"])
         self.assertEqual(len(payload["used_chunks"]), 1)

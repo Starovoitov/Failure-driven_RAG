@@ -93,16 +93,22 @@ class TestFaissStore(unittest.TestCase):
             {"id": "d2", "text": "doc2", "embedding": [0.3, 0.4], "metadata": {"src": "b"}},
         ]
         with tempfile.TemporaryDirectory() as td:
-            saved = self.faiss_store.save_faiss_index(records, persist_directory=td, index_name="idx")
+            saved = self.faiss_store.save_faiss_index(
+                records, persist_directory=td, index_name="idx"
+            )
             self.assertEqual(saved, 2)
-            docs = self.faiss_store.load_semantic_documents_from_faiss(persist_directory=td, index_name="idx")
+            docs = self.faiss_store.load_semantic_documents_from_faiss(
+                persist_directory=td, index_name="idx"
+            )
             self.assertEqual(len(docs), 2)
             self.assertEqual(docs[0].doc_id, "d1")
             self.assertEqual(docs[1].metadata["src"], "b")
 
     def test_load_returns_empty_when_store_missing(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            docs = self.faiss_store.load_semantic_documents_from_faiss(persist_directory=td, index_name="missing")
+            docs = self.faiss_store.load_semantic_documents_from_faiss(
+                persist_directory=td, index_name="missing"
+            )
             self.assertEqual(docs, [])
 
     def test_load_skips_docs_without_text_or_embeddings(self) -> None:
@@ -117,7 +123,9 @@ class TestFaissStore(unittest.TestCase):
             self._saved_index = _FakeIndex(2)
             self._saved_index.vectors = [[0.1, 0.2], [0.3, 0.4]]
             self._saved_index.ntotal = 2
-            docs = self.faiss_store.load_semantic_documents_from_faiss(persist_directory=td, index_name="idx")
+            docs = self.faiss_store.load_semantic_documents_from_faiss(
+                persist_directory=td, index_name="idx"
+            )
             self.assertEqual(len(docs), 1)
             self.assertEqual(docs[0].doc_id, "b")
 
@@ -178,4 +186,3 @@ class TestFaissStore(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

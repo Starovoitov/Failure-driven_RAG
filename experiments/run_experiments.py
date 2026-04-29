@@ -21,7 +21,6 @@ from utils.logger import get_json_logger, log_event
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 
 
-
 def _to_source_chunks(items: list[Any]) -> list[SourceChunk]:
     chunks: list[SourceChunk] = []
     for it in items:
@@ -124,26 +123,34 @@ def main() -> None:
     parser.add_argument("--question", "-q", help="Question for the RAG system.")
     parser.add_argument(
         "--models",
-
         help="Comma-separated model keys to run: openai,gigachat,ollama",
     )
     parser.add_argument("--top-k", type=int, help="How many retrieved docs to include.")
     parser.add_argument(
         "--max-context-tokens",
         type=int,
-
         help="Approx context token budget before truncation.",
     )
     parser.add_argument("--faiss-path", help="FAISS persist directory.")
     parser.add_argument("--index", help="FAISS index name.")
-    parser.add_argument("--embedding-model",)
-    parser.add_argument("--log-path",)
-    parser.add_argument("--llm-config-path",)
+    parser.add_argument(
+        "--embedding-model",
+    )
+    parser.add_argument(
+        "--log-path",
+    )
+    parser.add_argument(
+        "--llm-config-path",
+    )
 
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config")
     pre_args, _ = pre_parser.parse_known_args(sys.argv[1:])
-    config_path = Path(pre_args.config).expanduser() if pre_args.config else (Path.cwd() / "cli.defaults.json")
+    config_path = (
+        Path(pre_args.config).expanduser()
+        if pre_args.config
+        else (Path.cwd() / "cli.defaults.json")
+    )
     if not config_path.is_absolute():
         config_path = Path.cwd() / config_path
     parser.set_defaults(**load_script_defaults(config_path, "run_experiments"))
@@ -162,4 +169,3 @@ def main() -> None:
         log_path=args.log_path,
         llm_config_path=args.llm_config_path,
     )
-

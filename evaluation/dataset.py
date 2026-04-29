@@ -7,10 +7,12 @@ import random
 import re
 import sys
 from collections import defaultdict
-from pydantic import BaseModel
 from difflib import SequenceMatcher, get_close_matches
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel
+
 from utils.cli_config import load_script_defaults
 
 COMMON_RAG_LEXEMES = frozenset(
@@ -70,14 +72,12 @@ SUPPORT_CONCEPT_TERMS = (
     "claims",
 )
 
-DEFAULT_STOPWORDS = frozenset(
-    """
+DEFAULT_STOPWORDS = frozenset("""
     a an the is are was were be been being to of and or for in on at by with from as it its
     this that these those what how when where why which who can does do did will would should
     could may might must shall not no nor if then than so such into about over under between
     both each few more most other some such only own same so than too very just also
-    """.split()
-)
+    """.split())
 
 
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
@@ -98,7 +98,9 @@ class EvalSample(BaseModel):
     metadata: dict[str, object] | None = None
 
 
-def load_dataset(rag_jsonl: Path) -> tuple[dict[str, list[str]], dict[str, str], dict[str, str], list[str]]:
+def load_dataset(
+    rag_jsonl: Path,
+) -> tuple[dict[str, list[str]], dict[str, str], dict[str, str], list[str]]:
     qa_map: dict[str, list[str]] = defaultdict(list)
     chunk_text: dict[str, str] = {}
     chunk_url: dict[str, str] = {}
@@ -268,14 +270,20 @@ def lexical_chunk_ids(
             sent_q = {w for w in kws_q if word_in_text(w, sentence)}
             if kws_a and not sent_a:
                 continue
-            sent_score = (4 * len(sent_a)) + len(sent_q) + (3 * _phrase_hits(answer_bigrams, sentence_low))
+            sent_score = (
+                (4 * len(sent_a)) + len(sent_q) + (3 * _phrase_hits(answer_bigrams, sentence_low))
+            )
             sentence_best = max(sentence_best, sent_score)
 
         min_sentence_score = 3 if metric_terms or concept_terms else 5
         if uniq_a and sentence_best < min_sentence_score:
             continue
         rare_answer_terms = {w for w in uniq_a if _idf(w, keyword_df, total_chunks) >= 1.8}
-        if rare_answer_terms and not (rare_answer_terms & matched_a) and not (metric_terms or concept_terms):
+        if (
+            rare_answer_terms
+            and not (rare_answer_terms & matched_a)
+            and not (metric_terms or concept_terms)
+        ):
             continue
         answer_ratio = (len(matched_a) / len(uniq_a)) if uniq_a else 0.0
         rows.append((score, sentence_best, answer_ratio, weighted, -len(text), cid))
@@ -288,7 +296,9 @@ def lexical_chunk_ids(
     top_score, top_sentence, top_answer_ratio = top[0], top[1], top[2]
     min_ratio = 0.12 if metric_terms or concept_terms else 0.24
     min_top_sentence = 4 if metric_terms or concept_terms else 6
-    if uniq_a and (top_answer_ratio < min_ratio or top_sentence < min_top_sentence or top_score < 8):
+    if uniq_a and (
+        top_answer_ratio < min_ratio or top_sentence < min_top_sentence or top_score < 8
+    ):
         return []
     selected: list[str] = []
     min_score_ratio = 0.78
@@ -328,7 +338,7 @@ def fuzzy_match_question(question: str, qa_questions: list[str], min_ratio: floa
 
 
 def _dot(vec_a: list[float], vec_b: list[float]) -> float:
-    return sum(a * b for a, b in zip(vec_a, vec_b))
+    return sum(a * b for a, b in zip(vec_a, vec_b, strict=True))
 
 
 def build_semantic_index(
@@ -371,7 +381,9 @@ def semantic_chunk_ids(
     )[0]
     query_vec = list(query_embedding)
     scored: list[tuple[float, str]] = []
-    for cid, chunk_vec in zip(semantic_index["chunk_ids"], semantic_index["chunk_embeddings"]):
+    for cid, chunk_vec in zip(
+        semantic_index["chunk_ids"], semantic_index["chunk_embeddings"], strict=True
+    ):
         score = _dot(query_vec, chunk_vec)
         if score >= min_score:
             scored.append((score, cid))
@@ -419,7 +431,9 @@ def resolve_chunk_ids(
         if semantic_ids:
             return semantic_ids, "semantic"
 
-    lexical = lexical_chunk_ids(q, answer, chunk_text, keyword_df, total_chunks, lexical_min_hits, max_chunk_ids)
+    lexical = lexical_chunk_ids(
+        q, answer, chunk_text, keyword_df, total_chunks, lexical_min_hits, max_chunk_ids
+    )
     if lexical:
         return lexical, "lexical"
     return [], "none"
@@ -454,8 +468,12 @@ def excerpt_for_chunk(
         q_hits = {w for w in query_words if word_in_text(w, window)}
         score = (4 * len(a_hits)) + len(q_hits) + (3 * _phrase_hits(answer_bigrams, window_low))
         if need_pair:
-            has_retrieval = any(word_in_text(w, window) for w in ("retriever", "retrieval", "retrieve"))
-            has_generation = any(word_in_text(w, window) for w in ("generator", "generation", "generate"))
+            has_retrieval = any(
+                word_in_text(w, window) for w in ("retriever", "retrieval", "retrieve")
+            )
+            has_generation = any(
+                word_in_text(w, window) for w in ("generator", "generation", "generate")
+            )
             if has_retrieval and has_generation:
                 score += 10
         if score > best_score:
@@ -764,23 +782,62 @@ def main() -> None:
         description="Build structured evaluation JSONL from evaluation JSON + rag_dataset.jsonl.",
     )
     parser.add_argument("--config", help="Path to CLI defaults JSON.")
-    parser.add_argument("--rag", type=Path,)
-    parser.add_argument("--eval", type=Path,)
-    parser.add_argument("--out", type=Path,)
-    parser.add_argument("--fuzzy-ratio", type=float,)
-    parser.add_argument("--lexical-min-hits", type=int,)
-    parser.add_argument("--max-chunk-ids", type=int,)
+    parser.add_argument(
+        "--rag",
+        type=Path,
+    )
+    parser.add_argument(
+        "--eval",
+        type=Path,
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+    )
+    parser.add_argument(
+        "--fuzzy-ratio",
+        type=float,
+    )
+    parser.add_argument(
+        "--lexical-min-hits",
+        type=int,
+    )
+    parser.add_argument(
+        "--max-chunk-ids",
+        type=int,
+    )
     parser.add_argument("--no-semantic-fallback", action="store_true")
-    parser.add_argument("--semantic-model",)
-    parser.add_argument("--semantic-min-score", type=float,)
-    parser.add_argument("--max-gt-url-share", type=float,)
-    parser.add_argument("--target-multi-gt-share", type=float,)
-    parser.add_argument("--keep-max-ids-for-multi", type=int,)
-    parser.add_argument("--excerpt-max", type=int,)
+    parser.add_argument(
+        "--semantic-model",
+    )
+    parser.add_argument(
+        "--semantic-min-score",
+        type=float,
+    )
+    parser.add_argument(
+        "--max-gt-url-share",
+        type=float,
+    )
+    parser.add_argument(
+        "--target-multi-gt-share",
+        type=float,
+    )
+    parser.add_argument(
+        "--keep-max-ids-for-multi",
+        type=int,
+    )
+    parser.add_argument(
+        "--excerpt-max",
+        type=int,
+    )
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config")
     pre_args, _ = pre_parser.parse_known_args(sys.argv[1:])
-    config_path = Path(pre_args.config).expanduser() if pre_args.config else (Path.cwd() / "cli.defaults.json")
+    config_path = (
+        Path(pre_args.config).expanduser()
+        if pre_args.config
+        else (Path.cwd() / "cli.defaults.json")
+    )
     if not config_path.is_absolute():
         config_path = Path.cwd() / config_path
     parser.set_defaults(**load_script_defaults(config_path, "evaluation_dataset"))
@@ -803,4 +860,3 @@ def main() -> None:
     )
     print(f"Wrote {args.out} ({count} records).")
     print("Stats:", json.dumps(stats, indent=2))
-

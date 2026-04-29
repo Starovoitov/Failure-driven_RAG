@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
 from math import sqrt
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class SemanticDocument(BaseModel):
@@ -34,7 +35,7 @@ def cosine_similarity(vector_a: list[float], vector_b: list[float]) -> float:
     if not vector_a:
         return 0.0
 
-    dot_product = sum(a * b for a, b in zip(vector_a, vector_b))
+    dot_product = sum(a * b for a, b in zip(vector_a, vector_b, strict=True))
     norm_a = sqrt(sum(a * a for a in vector_a))
     norm_b = sqrt(sum(b * b for b in vector_b))
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from parser.models import SourceSpec
@@ -63,7 +64,9 @@ def build_sources(config_path: str = DEFAULT_SOURCES_CONFIG_PATH) -> list[Source
     return [_parse_source_spec(item, idx) for idx, item in enumerate(payload.sources)]
 
 
-def build_alias_groups(config_path: str = DEFAULT_SOURCES_CONFIG_PATH) -> tuple[AliasGroupPayload, ...]:
+def build_alias_groups(
+    config_path: str = DEFAULT_SOURCES_CONFIG_PATH,
+) -> tuple[AliasGroupPayload, ...]:
     """Load alias groups used for chunk enrichment."""
     raw = _load_sources_config(config_path=config_path)
     payload = raw.get("alias_groups", [])
@@ -85,12 +88,16 @@ def build_alias_groups(config_path: str = DEFAULT_SOURCES_CONFIG_PATH) -> tuple[
     return tuple(result)
 
 
-def build_seed_chunks(config_path: str = DEFAULT_SOURCES_CONFIG_PATH) -> tuple[SeedChunkPayload, ...]:
+def build_seed_chunks(
+    config_path: str = DEFAULT_SOURCES_CONFIG_PATH,
+) -> tuple[SeedChunkPayload, ...]:
     """Load synthetic seed chunks that are always appended to dataset output."""
     raw = _load_sources_config(config_path=config_path)
     payload = raw.get("multi_hop_seed_chunks", [])
     if not isinstance(payload, list):
-        raise ValueError(f"Invalid sources config '{config_path}': 'multi_hop_seed_chunks' must be a list")
+        raise ValueError(
+            f"Invalid sources config '{config_path}': 'multi_hop_seed_chunks' must be a list"
+        )
     try:
         parsed = TypeAdapter(list[SeedChunkPayload]).validate_python(payload)
     except ValidationError as exc:
@@ -106,4 +113,3 @@ def build_seed_chunks(config_path: str = DEFAULT_SOURCES_CONFIG_PATH) -> tuple[S
             raise ValueError(f"multi_hop_seed_chunks[{idx}].content must be a non-empty string")
         result.append(SeedChunkPayload(title=title, content=content))
     return tuple(result)
-

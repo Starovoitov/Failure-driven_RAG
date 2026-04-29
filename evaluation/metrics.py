@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+
 from pydantic import BaseModel
 
 
@@ -49,7 +50,9 @@ def reciprocal_rank(retrieved_doc_ids: list[str], relevant_doc_ids: list[str]) -
 def mrr(results: list[RetrievalResult]) -> float:
     if not results:
         return 0.0
-    return sum(reciprocal_rank(item.retrieved_doc_ids, item.relevant_doc_ids) for item in results) / len(results)
+    return sum(
+        reciprocal_rank(item.retrieved_doc_ids, item.relevant_doc_ids) for item in results
+    ) / len(results)
 
 
 def dcg_at_k(retrieved_doc_ids: list[str], relevance_map: dict[str, float], k: int) -> float:

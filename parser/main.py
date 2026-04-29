@@ -17,21 +17,51 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", help="Path to CLI defaults JSON.")
     parser.add_argument(
         "--output",
-
         help="Output JSONL path.",
     )
-    parser.add_argument("--min-tokens", type=int,)
-    parser.add_argument("--max-tokens", type=int,)
-    parser.add_argument("--overlap-ratio", type=float,)
-    parser.add_argument("--min-output-chunk-tokens", type=int,)
-    parser.add_argument("--max-output-chunk-tokens", type=int,)
-    parser.add_argument("--max-chunks-per-url", type=int,)
-    parser.add_argument("--max-chunks-per-category", type=int,)
-    parser.add_argument("--sources-config",)
-    parser.add_argument("--chunker-mode", choices=("token", "semantic_dynamic"),)
-    parser.add_argument("--near-duplicate-jaccard", type=float,)
+    parser.add_argument(
+        "--min-tokens",
+        type=int,
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+    )
+    parser.add_argument(
+        "--overlap-ratio",
+        type=float,
+    )
+    parser.add_argument(
+        "--min-output-chunk-tokens",
+        type=int,
+    )
+    parser.add_argument(
+        "--max-output-chunk-tokens",
+        type=int,
+    )
+    parser.add_argument(
+        "--max-chunks-per-url",
+        type=int,
+    )
+    parser.add_argument(
+        "--max-chunks-per-category",
+        type=int,
+    )
+    parser.add_argument(
+        "--sources-config",
+    )
+    parser.add_argument(
+        "--chunker-mode",
+        choices=("token", "semantic_dynamic"),
+    )
+    parser.add_argument(
+        "--near-duplicate-jaccard",
+        type=float,
+    )
     parser.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
-    parser.add_argument("--log-path",)
+    parser.add_argument(
+        "--log-path",
+    )
     parser.add_argument("--log-json", action="store_true")
     return parser
 
@@ -42,7 +72,11 @@ def main() -> None:
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config")
     pre_args, _ = pre_parser.parse_known_args(sys.argv[1:])
-    config_path = Path(pre_args.config).expanduser() if pre_args.config else (Path.cwd() / "cli.defaults.json")
+    config_path = (
+        Path(pre_args.config).expanduser()
+        if pre_args.config
+        else (Path.cwd() / "cli.defaults.json")
+    )
     if not config_path.is_absolute():
         config_path = Path.cwd() / config_path
     parser.set_defaults(**load_script_defaults(config_path, "parser_main"))
@@ -64,5 +98,3 @@ def main() -> None:
         log_json=args.log_json,
     )
     print(json.dumps(stats, indent=2))
-
-

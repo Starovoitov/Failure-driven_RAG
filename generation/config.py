@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+
 from pydantic import BaseModel, ValidationError
 
 from generation.llm import LLMConfig
@@ -34,7 +35,9 @@ def load_llm_provider_configs(config_path: str = DEFAULT_LLM_CONFIG_PATH) -> dic
         raise ValueError(f"Invalid llm config '{path}': {exc}") from exc
     providers = cfg.providers
     if not providers:
-        raise ValueError(f"Invalid llm config '{path}': top-level 'providers' must be a non-empty object")
+        raise ValueError(
+            f"Invalid llm config '{path}': top-level 'providers' must be a non-empty object"
+        )
 
     result: dict[str, LLMConfig] = {}
     for name, payload in providers.items():

@@ -38,7 +38,3 @@ class TestEvaluationMetrics(unittest.TestCase):
 
     def test_precision_with_short_result_list(self) -> None:
         self.assertEqual(precision_at_k(["a"], ["a", "b"], 5), 1.0)
-
-
-if __name__ == "__main__":
-    unittest.main()

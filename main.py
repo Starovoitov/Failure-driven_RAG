@@ -70,7 +70,7 @@ def cmd_build_parser(args: argparse.Namespace) -> None:
 
 def cmd_demo_retrieval(args: argparse.Namespace) -> None:
     # Command-scoped import keeps startup lightweight.
-    from demo_retrieval import run_demo
+    from generation.demo_retrieval import run_demo
 
     run_demo(
         query=args.query,

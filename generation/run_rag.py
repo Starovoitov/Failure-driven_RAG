@@ -20,15 +20,6 @@ DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 FALLBACK_LLM_PROVIDERS: tuple[str, ...] = ("openai", "gigachat", "ollama", "qwen")
 
 
-def _guess_embedding_models_by_dim(dim: int) -> str:
-    known_dims = {
-        384: "intfloat/e5-small-v2",
-        768: "intfloat/e5-base-v2",
-        1024: "intfloat/e5-large-v2",
-    }
-    return known_dims.get(dim, "unknown")
-
-
 def get_llm_config(
     provider: str, model: str | None = None, *, config_path: str = DEFAULT_LLM_CONFIG_PATH
 ) -> LLMConfig:
@@ -46,15 +37,6 @@ def get_llm_config(
 def build_model_configs(config_path: str = DEFAULT_LLM_CONFIG_PATH) -> dict[str, LLMConfig]:
     """Named provider configs loaded from root config."""
     return load_llm_provider_configs(config_path=config_path)
-
-
-def _load_known_providers_safe(config_path: str) -> tuple[str, ...]:
-    """Load provider names for argparse without failing when config is missing."""
-    try:
-        provider_names = tuple(load_llm_provider_configs(config_path=config_path).keys())
-        return provider_names or FALLBACK_LLM_PROVIDERS
-    except Exception:
-        return FALLBACK_LLM_PROVIDERS
 
 
 def run_rag(
@@ -327,3 +309,21 @@ def main() -> None:
         llm_config_path=args.llm_config_path,
         rerank_top1_margin_lambda=args.rerank_top1_margin_lambda,
     )
+
+
+def _guess_embedding_models_by_dim(dim: int) -> str:
+    known_dims = {
+        384: "intfloat/e5-small-v2",
+        768: "intfloat/e5-base-v2",
+        1024: "intfloat/e5-large-v2",
+    }
+    return known_dims.get(dim, "unknown")
+
+
+def _load_known_providers_safe(config_path: str) -> tuple[str, ...]:
+    """Load provider names for argparse without failing when config is missing."""
+    try:
+        provider_names = tuple(load_llm_provider_configs(config_path=config_path).keys())
+        return provider_names or FALLBACK_LLM_PROVIDERS
+    except Exception:
+        return FALLBACK_LLM_PROVIDERS

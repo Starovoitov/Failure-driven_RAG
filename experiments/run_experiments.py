@@ -21,20 +21,6 @@ from utils.logger import get_json_logger, log_event
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 
 
-def _to_source_chunks(items: list[Any]) -> list[SourceChunk]:
-    chunks: list[SourceChunk] = []
-    for it in items:
-        chunks.append(
-            SourceChunk(
-                doc_id=it.doc_id,
-                text=it.text,
-                score=getattr(it, "score", None),
-                metadata=getattr(it, "metadata", {}),
-            )
-        )
-    return chunks
-
-
 def run_experiments(
     question: str,
     models: list[str],
@@ -169,3 +155,17 @@ def main() -> None:
         log_path=args.log_path,
         llm_config_path=args.llm_config_path,
     )
+
+
+def _to_source_chunks(items: list[Any]) -> list[SourceChunk]:
+    chunks: list[SourceChunk] = []
+    for it in items:
+        chunks.append(
+            SourceChunk(
+                doc_id=it.doc_id,
+                text=it.text,
+                score=getattr(it, "score", None),
+                metadata=getattr(it, "metadata", {}),
+            )
+        )
+    return chunks

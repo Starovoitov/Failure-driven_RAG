@@ -149,33 +149,6 @@ def word_in_text(word: str, text: str) -> bool:
     )
 
 
-def _lexeme_weight(word: str) -> float:
-    return 0.35 if word in COMMON_RAG_LEXEMES else 1.0
-
-
-def _ngrams(words: list[str], n: int) -> set[str]:
-    if len(words) < n:
-        return set()
-    return {" ".join(words[i : i + n]) for i in range(len(words) - n + 1)}
-
-
-def _phrase_hits(phrases: set[str], text: str) -> int:
-    if not phrases:
-        return 0
-    return sum(1 for phrase in phrases if phrase in text)
-
-
-def _sentence_split(text: str) -> list[str]:
-    compact = re.sub(r"\s+", " ", text).strip()
-    if not compact:
-        return []
-    parts = re.split(r"(?<=[.!?])\s+| (?=[-•])", compact)
-    out = [p.strip() for p in parts if p and p.strip()]
-    if out:
-        return out
-    return [compact]
-
-
 def build_keyword_df(chunk_text: dict[str, str]) -> tuple[dict[str, int], int]:
     df: dict[str, int] = defaultdict(int)
     total = len(chunk_text)
@@ -184,36 +157,6 @@ def build_keyword_df(chunk_text: dict[str, str]) -> tuple[dict[str, int], int]:
         for w in seen:
             df[w] += 1
     return dict(df), total
-
-
-def _idf(word: str, keyword_df: dict[str, int], total_chunks: int) -> float:
-    if total_chunks <= 0:
-        return 1.0
-    doc_freq = keyword_df.get(word, 0)
-    return math.log1p(total_chunks / (1 + doc_freq))
-
-
-def _metric_terms(answer: str) -> set[str]:
-    src = answer.lower().replace(" @ ", "@").replace(" / ", "/")
-    terms: set[str] = set()
-    for term in ("recall@k", "precision@k", "mrr", "ndcg", "em/f1", "faithfulness", "groundedness"):
-        if term in src:
-            terms.add(term)
-    return terms
-
-
-def _expanded_keywords(words: list[str]) -> list[str]:
-    expansions = {
-        "generator": ("generation", "generate"),
-        "retriever": ("retrieval", "retrieve"),
-        "citation": ("citations", "cite"),
-        "grounding": ("grounded",),
-    }
-    out: list[str] = list(words)
-    for w in words:
-        for alt in expansions.get(w, ()):
-            out.append(alt)
-    return list(dict.fromkeys(out))
 
 
 def lexical_chunk_ids(
@@ -337,10 +280,6 @@ def fuzzy_match_question(question: str, qa_questions: list[str], min_ratio: floa
     return candidate
 
 
-def _dot(vec_a: list[float], vec_b: list[float]) -> float:
-    return sum(a * b for a, b in zip(vec_a, vec_b, strict=True))
-
-
 def build_semantic_index(
     chunk_text: dict[str, str],
     *,
@@ -389,12 +328,6 @@ def semantic_chunk_ids(
             scored.append((score, cid))
     scored.sort(reverse=True)
     return [cid for _, cid in scored[:max_chunk_ids]]
-
-
-def _clip_ids(ids: list[str], max_chunk_ids: int) -> list[str]:
-    if max_chunk_ids <= 0:
-        return []
-    return ids[:max_chunk_ids]
 
 
 def resolve_chunk_ids(
@@ -860,3 +793,70 @@ def main() -> None:
     )
     print(f"Wrote {args.out} ({count} records).")
     print("Stats:", json.dumps(stats, indent=2))
+
+
+def _lexeme_weight(word: str) -> float:
+    return 0.35 if word in COMMON_RAG_LEXEMES else 1.0
+
+
+def _ngrams(words: list[str], n: int) -> set[str]:
+    if len(words) < n:
+        return set()
+    return {" ".join(words[i : i + n]) for i in range(len(words) - n + 1)}
+
+
+def _phrase_hits(phrases: set[str], text: str) -> int:
+    if not phrases:
+        return 0
+    return sum(1 for phrase in phrases if phrase in text)
+
+
+def _sentence_split(text: str) -> list[str]:
+    compact = re.sub(r"\s+", " ", text).strip()
+    if not compact:
+        return []
+    parts = re.split(r"(?<=[.!?])\s+| (?=[-•])", compact)
+    out = [p.strip() for p in parts if p and p.strip()]
+    if out:
+        return out
+    return [compact]
+
+
+def _idf(word: str, keyword_df: dict[str, int], total_chunks: int) -> float:
+    if total_chunks <= 0:
+        return 1.0
+    doc_freq = keyword_df.get(word, 0)
+    return math.log1p(total_chunks / (1 + doc_freq))
+
+
+def _metric_terms(answer: str) -> set[str]:
+    src = answer.lower().replace(" @ ", "@").replace(" / ", "/")
+    terms: set[str] = set()
+    for term in ("recall@k", "precision@k", "mrr", "ndcg", "em/f1", "faithfulness", "groundedness"):
+        if term in src:
+            terms.add(term)
+    return terms
+
+
+def _expanded_keywords(words: list[str]) -> list[str]:
+    expansions = {
+        "generator": ("generation", "generate"),
+        "retriever": ("retrieval", "retrieve"),
+        "citation": ("citations", "cite"),
+        "grounding": ("grounded",),
+    }
+    out: list[str] = list(words)
+    for w in words:
+        for alt in expansions.get(w, ()):
+            out.append(alt)
+    return list(dict.fromkeys(out))
+
+
+def _dot(vec_a: list[float], vec_b: list[float]) -> float:
+    return sum(a * b for a, b in zip(vec_a, vec_b, strict=True))
+
+
+def _clip_ids(ids: list[str], max_chunk_ids: int) -> list[str]:
+    if max_chunk_ids <= 0:
+        return []
+    return ids[:max_chunk_ids]

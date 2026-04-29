@@ -18,37 +18,6 @@ class CEScoreCalibrationMode(StrEnum):
     ZSCORE = "zscore"
 
 
-def calibrate_ce_scores(
-    scores: list[float],
-    mode: CEScoreCalibrationMode,
-    temperature: float,
-) -> list[float]:
-    t = max(temperature, 1e-6)
-    if mode == CEScoreCalibrationMode.MINMAX:
-        normalized = min_max_normalize(
-            {str(i): score for i, score in enumerate(scores)}, epsilon=1e-6
-        )
-        return [normalized[str(i)] for i in range(len(scores))]
-    if mode == CEScoreCalibrationMode.SOFTMAX:
-        shifted = [score / t for score in scores]
-        max_s = max(shifted)
-        exps = [math.exp(score - max_s) for score in shifted]
-        total = sum(exps)
-        if total <= 0:
-            return [0.5] * len(scores)
-        return [value / total for value in exps]
-    if mode == CEScoreCalibrationMode.ZSCORE:
-        mean = sum(scores) / len(scores)
-        variance = sum((score - mean) ** 2 for score in scores) / len(scores)
-        std = math.sqrt(variance)
-        if std < 1e-6:
-            return [0.5] * len(scores)
-        z_scores = [(score - mean) / std for score in scores]
-        # Sigmoid to keep output in [0,1] for stable fusion.
-        return [1.0 / (1.0 + math.exp(-(z / t))) for z in z_scores]
-    raise ValueError(f"Unsupported ce_calibration: {mode}")
-
-
 class RerankCandidate(BaseModel):
     """Candidate passage before reranking."""
 
@@ -152,3 +121,34 @@ class CrossEncoderReranker:
             )
             reranked.sort(key=lambda x: x.score, reverse=True)
         return reranked[:top_k]
+
+
+def calibrate_ce_scores(
+    scores: list[float],
+    mode: CEScoreCalibrationMode,
+    temperature: float,
+) -> list[float]:
+    t = max(temperature, 1e-6)
+    if mode == CEScoreCalibrationMode.MINMAX:
+        normalized = min_max_normalize(
+            {str(i): score for i, score in enumerate(scores)}, epsilon=1e-6
+        )
+        return [normalized[str(i)] for i in range(len(scores))]
+    if mode == CEScoreCalibrationMode.SOFTMAX:
+        shifted = [score / t for score in scores]
+        max_s = max(shifted)
+        exps = [math.exp(score - max_s) for score in shifted]
+        total = sum(exps)
+        if total <= 0:
+            return [0.5] * len(scores)
+        return [value / total for value in exps]
+    if mode == CEScoreCalibrationMode.ZSCORE:
+        mean = sum(scores) / len(scores)
+        variance = sum((score - mean) ** 2 for score in scores) / len(scores)
+        std = math.sqrt(variance)
+        if std < 1e-6:
+            return [0.5] * len(scores)
+        z_scores = [(score - mean) / std for score in scores]
+        # Sigmoid to keep output in [0,1] for stable fusion.
+        return [1.0 / (1.0 + math.exp(-(z / t))) for z in z_scores]
+    raise ValueError(f"Unsupported ce_calibration: {mode}")

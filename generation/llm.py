@@ -34,104 +34,6 @@ class LLMConfig(BaseModel):
     cache_ttl_seconds: float = 300.0
 
 
-_LLM_RESPONSE_CACHE: LRUTTLCache[str, str] | None = None
-
-
-def _llm_cache_key(system_prompt: str, user_prompt: str, config: LLMConfig) -> str:
-    payload = {
-        "provider": config.provider,
-        "model": config.model,
-        "api_base": config.api_base,
-        "max_tokens": config.max_tokens,
-        "temperature": config.temperature,
-        "top_p": config.top_p,
-        "system_prompt": system_prompt,
-        "user_prompt": user_prompt,
-    }
-    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-
-
-def _get_llm_cache(config: LLMConfig) -> LRUTTLCache[str, str]:
-    global _LLM_RESPONSE_CACHE
-    if _LLM_RESPONSE_CACHE is None:
-        _LLM_RESPONSE_CACHE = LRUTTLCache(
-            capacity=max(1, config.cache_capacity),
-            ttl_seconds=max(0.1, config.cache_ttl_seconds),
-            cleanup_interval_seconds=30.0,
-        )
-        return _LLM_RESPONSE_CACHE
-
-    if _LLM_RESPONSE_CACHE.capacity != max(
-        1, config.cache_capacity
-    ) or _LLM_RESPONSE_CACHE.default_ttl_seconds != max(0.1, config.cache_ttl_seconds):
-        _LLM_RESPONSE_CACHE = LRUTTLCache(
-            capacity=max(1, config.cache_capacity),
-            ttl_seconds=max(0.1, config.cache_ttl_seconds),
-            cleanup_interval_seconds=30.0,
-        )
-    return _LLM_RESPONSE_CACHE
-
-
-def _headers(config: LLMConfig) -> dict[str, str]:
-    headers = {"Content-Type": "application/json"}
-    if config.api_key:
-        # OpenAI-compatible and many hosted endpoints accept Bearer auth.
-        headers["Authorization"] = f"Bearer {config.api_key}"
-    return headers
-
-
-def _payload(
-    system_prompt: str, user_prompt: str, config: LLMConfig, stream: bool
-) -> dict[str, Any]:
-    return {
-        "model": config.model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": config.temperature,
-        "top_p": config.top_p,
-        "max_tokens": config.max_tokens,
-        "stream": stream,
-    }
-
-
-def _extract_text_from_json(data: dict[str, Any]) -> str:
-    choices = data.get("choices", [])
-    if not choices:
-        return ""
-    message = choices[0].get("message", {})
-    if isinstance(message, dict):
-        return str(message.get("content", "")).strip()
-    return ""
-
-
-def _stream_openai_compatible(response: requests.Response) -> Iterator[str]:
-    """
-    Parse SSE chunks for OpenAI-compatible chat completion streaming.
-    """
-    for line in response.iter_lines(decode_unicode=True):
-        if not line:
-            continue
-        if not line.startswith("data:"):
-            continue
-        data = line[5:].strip()
-        if data == "[DONE]":
-            break
-        try:
-            event = json.loads(data)
-        except json.JSONDecodeError:
-            continue
-        choices = event.get("choices", [])
-        if not choices:
-            continue
-        delta = choices[0].get("delta", {})
-        token = delta.get("content")
-        if token:
-            yield str(token)
-
-
 def call_llm(
     system_prompt: str,
     user_prompt: str,
@@ -265,3 +167,98 @@ def stream_llm(
             "top_p": conf.top_p,
         },
     )
+
+
+def _llm_cache_key(system_prompt: str, user_prompt: str, config: LLMConfig) -> str:
+    payload = {
+        "provider": config.provider,
+        "model": config.model,
+        "api_base": config.api_base,
+        "max_tokens": config.max_tokens,
+        "temperature": config.temperature,
+        "top_p": config.top_p,
+        "system_prompt": system_prompt,
+        "user_prompt": user_prompt,
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _get_llm_cache(config: LLMConfig) -> LRUTTLCache[str, str]:
+    global _LLM_RESPONSE_CACHE
+    if _LLM_RESPONSE_CACHE is None:
+        _LLM_RESPONSE_CACHE = LRUTTLCache(
+            capacity=max(1, config.cache_capacity),
+            ttl_seconds=max(0.1, config.cache_ttl_seconds),
+            cleanup_interval_seconds=30.0,
+        )
+        return _LLM_RESPONSE_CACHE
+
+    if _LLM_RESPONSE_CACHE.capacity != max(
+        1, config.cache_capacity
+    ) or _LLM_RESPONSE_CACHE.default_ttl_seconds != max(0.1, config.cache_ttl_seconds):
+        _LLM_RESPONSE_CACHE = LRUTTLCache(
+            capacity=max(1, config.cache_capacity),
+            ttl_seconds=max(0.1, config.cache_ttl_seconds),
+            cleanup_interval_seconds=30.0,
+        )
+    return _LLM_RESPONSE_CACHE
+
+
+def _headers(config: LLMConfig) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if config.api_key:
+        # OpenAI-compatible and many hosted endpoints accept Bearer auth.
+        headers["Authorization"] = f"Bearer {config.api_key}"
+    return headers
+
+
+def _payload(
+    system_prompt: str, user_prompt: str, config: LLMConfig, stream: bool
+) -> dict[str, Any]:
+    return {
+        "model": config.model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": config.temperature,
+        "top_p": config.top_p,
+        "max_tokens": config.max_tokens,
+        "stream": stream,
+    }
+
+
+def _extract_text_from_json(data: dict[str, Any]) -> str:
+    choices = data.get("choices", [])
+    if not choices:
+        return ""
+    message = choices[0].get("message", {})
+    if isinstance(message, dict):
+        return str(message.get("content", "")).strip()
+    return ""
+
+
+def _stream_openai_compatible(response: requests.Response) -> Iterator[str]:
+    """
+    Parse SSE chunks for OpenAI-compatible chat completion streaming.
+    """
+    for line in response.iter_lines(decode_unicode=True):
+        if not line:
+            continue
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        try:
+            event = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        choices = event.get("choices", [])
+        if not choices:
+            continue
+        delta = choices[0].get("delta", {})
+        token = delta.get("content")
+        if token:
+            yield str(token)

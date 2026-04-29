@@ -7,19 +7,6 @@ import unittest
 from evaluation.dataset import EvalSample
 
 
-class _DummySentenceTransformer:
-    def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
-        pass
-
-    def encode(self, *args, **kwargs):  # noqa: ARG002
-        return [[0.0, 1.0]]
-
-
-class _FakeRetriever:
-    def search(self, query: str, top_k: int) -> list[str]:
-        return [f"{query}-doc-{i}" for i in range(top_k)]
-
-
 class TestEvaluationRunnerHelpers(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -105,5 +92,14 @@ class TestEvaluationRunnerHelpers(unittest.TestCase):
         self.assertEqual(details, [])
 
 
-if __name__ == "__main__":
-    unittest.main()
+class _DummySentenceTransformer:
+    def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
+        pass
+
+    def encode(self, *args, **kwargs):  # noqa: ARG002
+        return [[0.0, 1.0]]
+
+
+class _FakeRetriever:
+    def search(self, query: str, top_k: int) -> list[str]:
+        return [f"{query}-doc-{i}" for i in range(top_k)]

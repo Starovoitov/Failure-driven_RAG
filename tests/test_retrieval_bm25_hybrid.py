@@ -49,7 +49,3 @@ class TestRetrieval(unittest.TestCase):
         bm25 = []
         merged = hybrid_search(semantic, bm25, top_k=2, max_per_group=1)
         self.assertEqual(len(merged), 2)
-
-
-if __name__ == "__main__":
-    unittest.main()

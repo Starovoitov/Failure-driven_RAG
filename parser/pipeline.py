@@ -36,10 +36,6 @@ class PipelineStats(BaseModel):
     skipped_by_near_duplicate: int = 0
 
 
-def _contains_phrase(text_lower: str, phrase: str) -> bool:
-    return phrase.lower() in text_lower
-
-
 def enrich_chunk_aliases(chunk_text: str, alias_groups: tuple[AliasGroupPayload, ...]) -> str:
     """
     Add compact alias bridges to improve lexical + semantic retrievability.
@@ -66,65 +62,6 @@ def enrich_chunk_aliases(chunk_text: str, alias_groups: tuple[AliasGroupPayload,
     if not bridge_clauses:
         return chunk_text
     return f"{chunk} Alias notes: {'; '.join(bridge_clauses)}."
-
-
-def _add_multihop_seed_chunks(
-    *,
-    f: Any,
-    counters: PipelineStats,
-    min_output_chunk_tokens: int,
-    max_output_chunk_tokens: int,
-    alias_groups: tuple[AliasGroupPayload, ...],
-    seed_chunks: tuple[SeedChunkPayload, ...],
-) -> None:
-    pseudo_source = SourceSpec(
-        url="seed://multi-hop-retrieval",
-        category="advanced_rag_ideas",
-        subtopic="multi_hop_retrieval",
-        source_type="seed",
-        priority_topics=[
-            "multi-hop retrieval",
-            "multi-step retrieval",
-            "iterative retrieval",
-            "compositional retrieval",
-            "graph rag",
-            "agentic rag",
-        ],
-    )
-
-    for idx, seed in enumerate(seed_chunks):
-        text = f"Title: {seed.title}\n\nContent:\n{seed.content}".strip()
-        enriched = enrich_chunk_aliases(text, alias_groups=alias_groups)
-        chunk_tokens = token_count(enriched)
-        if chunk_tokens < min_output_chunk_tokens or chunk_tokens > max_output_chunk_tokens:
-            counters.skipped_by_token_filter += 1
-            continue
-
-        metadata = enrich_metadata(
-            source=pseudo_source,
-            title=seed.title,
-            chunk_index=idx,
-            chunk_text=enriched,
-            scraped_at="1970-01-01T00:00:00+00:00",
-        )
-        raw = RawChunkRecord(
-            record_type="raw_chunk",
-            chunk_id=metadata["chunk_id"],
-            text=enriched,
-            token_count=chunk_tokens,
-            overlap_tokens=0,
-            metadata=metadata,
-        )
-        f.write(json.dumps(raw.to_dict(), ensure_ascii=False) + "\n")
-        counters.raw_chunks += 1
-
-        for qa in build_qa_pairs(
-            chunk_text=enriched,
-            metadata=metadata,
-            priority_topics=pseudo_source.priority_topics,
-        ):
-            f.write(json.dumps(qa.to_dict(), ensure_ascii=False) + "\n")
-            counters.qa_pairs += 1
 
 
 def run_pipeline(
@@ -329,3 +266,66 @@ def enrich_metadata(
         "language": "en",
         "scraped_at": scraped_at,
     }
+
+
+def _contains_phrase(text_lower: str, phrase: str) -> bool:
+    return phrase.lower() in text_lower
+
+
+def _add_multihop_seed_chunks(
+    *,
+    f: Any,
+    counters: PipelineStats,
+    min_output_chunk_tokens: int,
+    max_output_chunk_tokens: int,
+    alias_groups: tuple[AliasGroupPayload, ...],
+    seed_chunks: tuple[SeedChunkPayload, ...],
+) -> None:
+    pseudo_source = SourceSpec(
+        url="seed://multi-hop-retrieval",
+        category="advanced_rag_ideas",
+        subtopic="multi_hop_retrieval",
+        source_type="seed",
+        priority_topics=[
+            "multi-hop retrieval",
+            "multi-step retrieval",
+            "iterative retrieval",
+            "compositional retrieval",
+            "graph rag",
+            "agentic rag",
+        ],
+    )
+
+    for idx, seed in enumerate(seed_chunks):
+        text = f"Title: {seed.title}\n\nContent:\n{seed.content}".strip()
+        enriched = enrich_chunk_aliases(text, alias_groups=alias_groups)
+        chunk_tokens = token_count(enriched)
+        if chunk_tokens < min_output_chunk_tokens or chunk_tokens > max_output_chunk_tokens:
+            counters.skipped_by_token_filter += 1
+            continue
+
+        metadata = enrich_metadata(
+            source=pseudo_source,
+            title=seed.title,
+            chunk_index=idx,
+            chunk_text=enriched,
+            scraped_at="1970-01-01T00:00:00+00:00",
+        )
+        raw = RawChunkRecord(
+            record_type="raw_chunk",
+            chunk_id=metadata["chunk_id"],
+            text=enriched,
+            token_count=chunk_tokens,
+            overlap_tokens=0,
+            metadata=metadata,
+        )
+        f.write(json.dumps(raw.to_dict(), ensure_ascii=False) + "\n")
+        counters.raw_chunks += 1
+
+        for qa in build_qa_pairs(
+            chunk_text=enriched,
+            metadata=metadata,
+            priority_topics=pseudo_source.priority_topics,
+        ):
+            f.write(json.dumps(qa.to_dict(), ensure_ascii=False) + "\n")
+            counters.qa_pairs += 1

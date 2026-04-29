@@ -14,45 +14,6 @@ INDEX_FILENAME = "vectors.index"
 STORE_FILENAME = "store.json"
 
 
-def _maybe_migrate_legacy_index_dir(persist_directory: str, index_name: str) -> Path:
-    """
-    Move legacy root-level index folder (e.g. ./rag_chunks) into persist_directory/index_name.
-
-    Migration runs only when destination does not already exist.
-    """
-    target_root = Path(persist_directory) / index_name
-    if target_root.exists():
-        return target_root
-
-    # Never treat cwd/parent/special values as a legacy index directory name.
-    normalized_name = index_name.strip()
-    if normalized_name in {"", ".", ".."}:
-        return target_root
-    if Path(normalized_name).name != normalized_name:
-        return target_root
-
-    legacy_root = Path(index_name)
-    if not legacy_root.is_dir():
-        return target_root
-
-    # Avoid pathological self-moves when paths already point to the same location.
-    try:
-        if legacy_root.resolve() == target_root.resolve():
-            return target_root
-    except FileNotFoundError:
-        return target_root
-
-    target_root.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(legacy_root), str(target_root))
-    return target_root
-
-
-def _persist_paths(persist_directory: str, index_name: str) -> Path:
-    root = _maybe_migrate_legacy_index_dir(persist_directory, index_name)
-    root.mkdir(parents=True, exist_ok=True)
-    return root
-
-
 def save_faiss_index(
     embedding_records: list[dict[str, Any]],
     persist_directory: str = "data/faiss",
@@ -136,3 +97,42 @@ def load_semantic_documents_from_faiss(
             )
         )
     return results
+
+
+def _maybe_migrate_legacy_index_dir(persist_directory: str, index_name: str) -> Path:
+    """
+    Move legacy root-level index folder (e.g. ./rag_chunks) into persist_directory/index_name.
+
+    Migration runs only when destination does not already exist.
+    """
+    target_root = Path(persist_directory) / index_name
+    if target_root.exists():
+        return target_root
+
+    # Never treat cwd/parent/special values as a legacy index directory name.
+    normalized_name = index_name.strip()
+    if normalized_name in {"", ".", ".."}:
+        return target_root
+    if Path(normalized_name).name != normalized_name:
+        return target_root
+
+    legacy_root = Path(index_name)
+    if not legacy_root.is_dir():
+        return target_root
+
+    # Avoid pathological self-moves when paths already point to the same location.
+    try:
+        if legacy_root.resolve() == target_root.resolve():
+            return target_root
+    except FileNotFoundError:
+        return target_root
+
+    target_root.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(legacy_root), str(target_root))
+    return target_root
+
+
+def _persist_paths(persist_directory: str, index_name: str) -> Path:
+    root = _maybe_migrate_legacy_index_dir(persist_directory, index_name)
+    root.mkdir(parents=True, exist_ok=True)
+    return root

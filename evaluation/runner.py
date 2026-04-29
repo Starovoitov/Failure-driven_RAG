@@ -22,10 +22,6 @@ from utils.embedding_format import format_query_for_embedding
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 
 
-def _retrieval_cache_key(query: str, top_k: int) -> str:
-    return f"{query}||{top_k}"
-
-
 class Retriever(Protocol):
     def search(self, query: str, top_k: int) -> list[str]: ...
 
@@ -402,3 +398,7 @@ def main() -> None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"Saved JSON report to {out_path}")
+
+
+def _retrieval_cache_key(query: str, top_k: int) -> str:
+    return f"{query}||{top_k}"

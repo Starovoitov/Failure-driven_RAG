@@ -42,14 +42,6 @@ def log_event(logger: logging.Logger, payload: dict[str, Any]) -> None:
     logger.info("event", extra={"payload": payload})
 
 
-def _parse_log_level(level: str) -> int:
-    normalized = level.strip().upper()
-    value = getattr(logging, normalized, None)
-    if not isinstance(value, int):
-        raise ValueError(f"Unsupported log level: {level}")
-    return value
-
-
 def configure_runtime_logger(
     name: str,
     *,
@@ -91,3 +83,11 @@ def configure_runtime_logger(
         logger.addHandler(file_handler)
 
     return logger
+
+
+def _parse_log_level(level: str) -> int:
+    normalized = level.strip().upper()
+    value = getattr(logging, normalized, None)
+    if not isinstance(value, int):
+        raise ValueError(f"Unsupported log level: {level}")
+    return value

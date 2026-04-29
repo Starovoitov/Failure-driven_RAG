@@ -41,6 +41,22 @@ def chunk_text(
     )
 
 
+def overlap_tokens(max_tokens: int, overlap_ratio: float) -> int:
+    """Compute overlap size in tokens for a chunk window."""
+    return int(math.floor(max_tokens * overlap_ratio))
+
+
+def jaccard_similarity_tokens(text_a: str, text_b: str) -> float:
+    """Compute Jaccard similarity across unique lowercase tokens."""
+    ta = set(tokenize(text_a.lower()))
+    tb = set(tokenize(text_b.lower()))
+    if not ta and not tb:
+        return 1.0
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / len(ta | tb)
+
+
 def _chunk_text_token(
     tokens: list[str], min_tokens: int, max_tokens: int, overlap_ratio: float
 ) -> list[str]:
@@ -177,19 +193,3 @@ def _tail_overlap_units(units: list[str], overlap_target: int) -> list[str]:
         kept.append(unit)
         total += size
     return list(reversed(kept))
-
-
-def overlap_tokens(max_tokens: int, overlap_ratio: float) -> int:
-    """Compute overlap size in tokens for a chunk window."""
-    return int(math.floor(max_tokens * overlap_ratio))
-
-
-def jaccard_similarity_tokens(text_a: str, text_b: str) -> float:
-    """Compute Jaccard similarity across unique lowercase tokens."""
-    ta = set(tokenize(text_a.lower()))
-    tb = set(tokenize(text_b.lower()))
-    if not ta and not tb:
-        return 1.0
-    if not ta or not tb:
-        return 0.0
-    return len(ta & tb) / len(ta | tb)

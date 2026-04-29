@@ -5,14 +5,6 @@ import types
 import unittest
 
 
-class _DummyCrossEncoder:
-    def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
-        pass
-
-    def predict(self, pairs, batch_size=32):  # noqa: ARG002
-        return [0.1 + (0.01 * i) for i, _ in enumerate(pairs)]
-
-
 class TestRerankingCrossEncoder(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -71,5 +63,9 @@ class TestRerankingCrossEncoder(unittest.TestCase):
         self.assertEqual(results[0].doc_id, "b")
 
 
-if __name__ == "__main__":
-    unittest.main()
+class _DummyCrossEncoder:
+    def __init__(self, *args, **kwargs) -> None:  # noqa: ARG002
+        pass
+
+    def predict(self, pairs, batch_size=32):  # noqa: ARG002
+        return [0.1 + (0.01 * i) for i, _ in enumerate(pairs)]

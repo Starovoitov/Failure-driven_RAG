@@ -10,33 +10,6 @@ import unittest
 from pathlib import Path
 
 
-class _FakeArray:
-    def __init__(self, values: list[list[float]]) -> None:
-        self.values = values
-
-
-class _FakeMatrix:
-    def __init__(self, values: list[list[float]]) -> None:
-        self._values = values
-
-    def tolist(self) -> list[list[float]]:
-        return self._values
-
-
-class _FakeIndex:
-    def __init__(self, dim: int) -> None:
-        self.dim = dim
-        self.vectors: list[list[float]] = []
-        self.ntotal = 0
-
-    def add(self, vectors: _FakeArray) -> None:
-        self.vectors.extend(vectors.values)
-        self.ntotal = len(self.vectors)
-
-    def reconstruct_n(self, start: int, n: int) -> _FakeMatrix:
-        return _FakeMatrix(self.vectors[start : start + n])
-
-
 class TestFaissStore(unittest.TestCase):
     def setUp(self) -> None:
         self._old_np = sys.modules.get("numpy")
@@ -184,5 +157,28 @@ class TestFaissStore(unittest.TestCase):
             self.assertTrue((workspace / "data" / "faiss" / "store.json").exists())
 
 
-if __name__ == "__main__":
-    unittest.main()
+class _FakeArray:
+    def __init__(self, values: list[list[float]]) -> None:
+        self.values = values
+
+
+class _FakeMatrix:
+    def __init__(self, values: list[list[float]]) -> None:
+        self._values = values
+
+    def tolist(self) -> list[list[float]]:
+        return self._values
+
+
+class _FakeIndex:
+    def __init__(self, dim: int) -> None:
+        self.dim = dim
+        self.vectors: list[list[float]] = []
+        self.ntotal = 0
+
+    def add(self, vectors: _FakeArray) -> None:
+        self.vectors.extend(vectors.values)
+        self.ntotal = len(self.vectors)
+
+    def reconstruct_n(self, start: int, n: int) -> _FakeMatrix:
+        return _FakeMatrix(self.vectors[start : start + n])

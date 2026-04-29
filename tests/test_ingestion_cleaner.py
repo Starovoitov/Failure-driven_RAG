@@ -52,7 +52,3 @@ class TestIngestionCleaner(unittest.TestCase):
             )
             self.assertFalse(result["index_deleted"])
             self.assertTrue(result["directory_deleted"])
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -60,18 +60,6 @@ def merge_top_k_documents(chunks: list[SourceChunk], top_k: int) -> list[SourceC
     return ranked[:top_k]
 
 
-def _source_header(idx: int, chunk: SourceChunk) -> str:
-    meta = chunk.metadata or {}
-    title = str(meta.get("title", "")).strip()
-    url = str(meta.get("url", "")).strip()
-    parts = [f"[{idx}]"]
-    if title:
-        parts.append(f"title={title}")
-    if url:
-        parts.append(f"url={url}")
-    return " ".join(parts)
-
-
 def format_context_with_citations(
     chunks: list[SourceChunk],
     max_context_tokens: int = 2500,
@@ -148,3 +136,15 @@ def build_rag_messages(
         "used_chunks": used_chunks,
         "context_tokens_estimate": estimate_tokens(context) if context else 0,
     }
+
+
+def _source_header(idx: int, chunk: SourceChunk) -> str:
+    meta = chunk.metadata or {}
+    title = str(meta.get("title", "")).strip()
+    url = str(meta.get("url", "")).strip()
+    parts = [f"[{idx}]"]
+    if title:
+        parts.append(f"title={title}")
+    if url:
+        parts.append(f"url={url}")
+    return " ".join(parts)

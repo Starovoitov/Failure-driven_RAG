@@ -36,6 +36,84 @@ class BuildContextsStats(BaseModel):
     contexts_other: int = 0
 
 
+def build_contexts(
+    *,
+    report: dict,
+    chunk_texts: dict[str, str],
+    max_negative_rank: int,
+    max_negatives: int,
+    ranking_cutoff_weight: float,
+    true_recall_weight: float,
+    default_weight: float,
+) -> tuple[list[dict[str, object]], dict[str, int]]:
+    evaluation = report.get("evaluation", {})
+    diagnostics = report.get("diagnostics", {})
+    failure_analysis = diagnostics.get("failure_analysis", {})
+    samples = evaluation.get("failed_queries_for_manual_inspection", [])
+    if not samples:
+        samples = failure_analysis.get("manual_inspection_samples", [])
+
+    contexts: list[RerankerContext] = []
+    stats = BuildContextsStats()
+
+    for sample in samples:
+        stats.samples_seen += 1
+        fields = _extract_failure_sample_fields(sample)
+        query = fields.query
+        positives = fields.positives
+        retrieved = fields.retrieved
+        retrieved_full = fields.retrieved_full
+        bm25_branch = fields.bm25_branch
+        bucket = fields.bucket
+        source_miss_type = fields.source_miss_type
+        sample_weight = _sample_weight_for_bucket(
+            bucket,
+            ranking_cutoff_weight=ranking_cutoff_weight,
+            true_recall_weight=true_recall_weight,
+            default_weight=default_weight,
+        )
+
+        if not query or not positives or not retrieved:
+            continue
+
+        stats.samples_used += 1
+        positive_ids = _collect_positive_ids(positives, chunk_texts, stats)
+        negative_pool = _build_negative_pool(
+            bucket=bucket,
+            retrieved=retrieved,
+            retrieved_full=retrieved_full,
+            bm25_branch=bm25_branch,
+            max_negative_rank=max_negative_rank,
+        )
+        negative_ids, negative_weights = _collect_negative_ids(
+            negative_pool=negative_pool,
+            retrieved_full=retrieved_full,
+            positive_ids=positive_ids,
+            source_miss_type=source_miss_type,
+            chunk_texts=chunk_texts,
+            sample_weight=sample_weight,
+            max_negatives=max_negatives,
+            stats=stats,
+        )
+
+        if not positive_ids or not negative_ids:
+            continue
+
+        contexts.append(
+            RerankerContext(
+                query=query,
+                positives=positive_ids,
+                negatives=negative_ids,
+                weights=negative_weights,
+                failure_bucket=bucket,
+                source_miss_type=source_miss_type,
+            )
+        )
+        _update_context_bucket_stats(stats, bucket)
+
+    return [item.model_dump() for item in contexts], stats.model_dump()
+
+
 def _stats_inc(stats: BuildContextsStats | dict[str, int], key: str) -> None:
     if isinstance(stats, dict):
         stats[key] = int(stats.get(key, 0)) + 1
@@ -148,81 +226,3 @@ def _update_context_bucket_stats(stats: BuildContextsStats, bucket: str) -> None
         stats.contexts_true_recall_failure += 1
     else:
         stats.contexts_other += 1
-
-
-def build_contexts(
-    *,
-    report: dict,
-    chunk_texts: dict[str, str],
-    max_negative_rank: int,
-    max_negatives: int,
-    ranking_cutoff_weight: float,
-    true_recall_weight: float,
-    default_weight: float,
-) -> tuple[list[dict[str, object]], dict[str, int]]:
-    evaluation = report.get("evaluation", {})
-    diagnostics = report.get("diagnostics", {})
-    failure_analysis = diagnostics.get("failure_analysis", {})
-    samples = evaluation.get("failed_queries_for_manual_inspection", [])
-    if not samples:
-        samples = failure_analysis.get("manual_inspection_samples", [])
-
-    contexts: list[RerankerContext] = []
-    stats = BuildContextsStats()
-
-    for sample in samples:
-        stats.samples_seen += 1
-        fields = _extract_failure_sample_fields(sample)
-        query = fields.query
-        positives = fields.positives
-        retrieved = fields.retrieved
-        retrieved_full = fields.retrieved_full
-        bm25_branch = fields.bm25_branch
-        bucket = fields.bucket
-        source_miss_type = fields.source_miss_type
-        sample_weight = _sample_weight_for_bucket(
-            bucket,
-            ranking_cutoff_weight=ranking_cutoff_weight,
-            true_recall_weight=true_recall_weight,
-            default_weight=default_weight,
-        )
-
-        if not query or not positives or not retrieved:
-            continue
-
-        stats.samples_used += 1
-        positive_ids = _collect_positive_ids(positives, chunk_texts, stats)
-        negative_pool = _build_negative_pool(
-            bucket=bucket,
-            retrieved=retrieved,
-            retrieved_full=retrieved_full,
-            bm25_branch=bm25_branch,
-            max_negative_rank=max_negative_rank,
-        )
-        negative_ids, negative_weights = _collect_negative_ids(
-            negative_pool=negative_pool,
-            retrieved_full=retrieved_full,
-            positive_ids=positive_ids,
-            source_miss_type=source_miss_type,
-            chunk_texts=chunk_texts,
-            sample_weight=sample_weight,
-            max_negatives=max_negatives,
-            stats=stats,
-        )
-
-        if not positive_ids or not negative_ids:
-            continue
-
-        contexts.append(
-            RerankerContext(
-                query=query,
-                positives=positive_ids,
-                negatives=negative_ids,
-                weights=negative_weights,
-                failure_bucket=bucket,
-                source_miss_type=source_miss_type,
-            )
-        )
-        _update_context_bucket_stats(stats, bucket)
-
-    return [item.model_dump() for item in contexts], stats.model_dump()

@@ -25,7 +25,3 @@ class TestUtilsCommon(unittest.TestCase):
         src = {"x": 2.0, "y": 4.0, "z": 3.0}
         out = min_max_normalize(src)
         self.assertEqual(set(out.keys()), set(src.keys()))
-
-
-if __name__ == "__main__":
-    unittest.main()

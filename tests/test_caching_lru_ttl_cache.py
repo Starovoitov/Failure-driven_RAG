@@ -78,7 +78,3 @@ class TestLRUTTLCache(unittest.TestCase):
         stats = cache.stats()
         self.assertEqual(stats.evicted_lru, 1)
         self.assertEqual(stats.size, 1)
-
-
-if __name__ == "__main__":
-    unittest.main()

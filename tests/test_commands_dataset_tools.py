@@ -142,7 +142,3 @@ class TestCommandsDatasetTools(unittest.TestCase):
             self.assertEqual(report["rag"]["raw_chunks"], 2)
             self.assertEqual(report["evaluation"]["rows_total"], 1)
             self.assertIn("quality_score", report)
-
-
-if __name__ == "__main__":
-    unittest.main()

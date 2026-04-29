@@ -33,27 +33,6 @@ class SeedChunkPayload(BaseModel):
     content: str
 
 
-def _load_sources_config(config_path: str = DEFAULT_SOURCES_CONFIG_PATH) -> dict[str, Any]:
-    path = Path(config_path)
-    if not path.is_file():
-        raise FileNotFoundError(f"Sources config not found: {path}")
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
-        raise ValueError(f"Invalid sources config '{path}': expected top-level JSON object")
-    return raw
-
-
-def _parse_source_spec(payload: SourceSpecPayload, idx: int) -> SourceSpec:
-    priority_topics = payload.priority_topics
-    return SourceSpec(
-        category=str(payload.category).strip(),
-        subtopic=str(payload.subtopic).strip(),
-        url=str(payload.url).strip(),
-        source_type=str(payload.source_type).strip(),
-        priority_topics=[item.strip() for item in priority_topics if str(item).strip()],
-    )
-
-
 def build_sources(config_path: str = DEFAULT_SOURCES_CONFIG_PATH) -> list[SourceSpec]:
     """Load source specs from a JSON config file."""
     raw = _load_sources_config(config_path=config_path)
@@ -113,3 +92,24 @@ def build_seed_chunks(
             raise ValueError(f"multi_hop_seed_chunks[{idx}].content must be a non-empty string")
         result.append(SeedChunkPayload(title=title, content=content))
     return tuple(result)
+
+
+def _load_sources_config(config_path: str = DEFAULT_SOURCES_CONFIG_PATH) -> dict[str, Any]:
+    path = Path(config_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Sources config not found: {path}")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Invalid sources config '{path}': expected top-level JSON object")
+    return raw
+
+
+def _parse_source_spec(payload: SourceSpecPayload, idx: int) -> SourceSpec:
+    priority_topics = payload.priority_topics
+    return SourceSpec(
+        category=str(payload.category).strip(),
+        subtopic=str(payload.subtopic).strip(),
+        url=str(payload.url).strip(),
+        source_type=str(payload.source_type).strip(),
+        priority_topics=[item.strip() for item in priority_topics if str(item).strip()],
+    )

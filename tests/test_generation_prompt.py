@@ -54,7 +54,3 @@ class TestGenerationPrompt(unittest.TestCase):
         ]
         payload = build_rag_messages(question="Q", chunks=chunks, top_k=2, max_context_tokens=50)
         self.assertTrue(payload["context_tokens_estimate"] <= 55)
-
-
-if __name__ == "__main__":
-    unittest.main()

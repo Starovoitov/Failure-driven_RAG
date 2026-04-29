@@ -21,16 +21,6 @@ class EmbeddingInputRecord(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-def _read_raw_chunks(dataset_path: str) -> Iterator[dict[str, Any]]:
-    """Stream raw chunk records from dataset JSONL."""
-    with Path(dataset_path).open("r", encoding="utf-8") as dataset:
-        for line in dataset:
-            item = json.loads(line)
-            if item.get("record_type") != "raw_chunk":
-                continue
-            yield item
-
-
 def run_parser_and_upsert_to_faiss(
     dataset_path: str = "data/rag_dataset.jsonl",
     persist_directory: str = "data/faiss",
@@ -116,3 +106,13 @@ def load_semantic_documents_from_faiss(
         persist_directory=persist_directory,
         index_name=index_name,
     )
+
+
+def _read_raw_chunks(dataset_path: str) -> Iterator[dict[str, Any]]:
+    """Stream raw chunk records from dataset JSONL."""
+    with Path(dataset_path).open("r", encoding="utf-8") as dataset:
+        for line in dataset:
+            item = json.loads(line)
+            if item.get("record_type") != "raw_chunk":
+                continue
+            yield item

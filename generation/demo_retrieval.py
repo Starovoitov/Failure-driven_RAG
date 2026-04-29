@@ -3,10 +3,10 @@
 Run BM25, semantic (cosine), and hybrid retrieval on a tiny sample corpus.
 
 Usage from project root:
-  poetry run python demo_retrieval.py
-  poetry run python demo_retrieval.py --query "how does caching work"
-  poetry run python demo_retrieval.py --query "how does caching work" --model intfloat/e5-base-v2
-  poetry run python demo_retrieval.py --query "how does caching work"
+  poetry run python generation/demo_retrieval.py
+  poetry run python generation/demo_retrieval.py --query "how does caching work"
+  poetry run python generation/demo_retrieval.py --query "how does caching work" --model intfloat/e5-base-v2
+  poetry run python generation/demo_retrieval.py --query "how does caching work"
     --model intfloat/e5-base-v2 --rerank --reranker-model cross-encoder/ms-marco-MiniLM-L-6-v2
 
 Important distinction vs `main.py run_rag`:
@@ -16,11 +16,11 @@ Important distinction vs `main.py run_rag`:
   `--embedding-model`.
 
 `main.py run_rag` examples:
-  poetry run python main.py run_rag --question "how does caching work" --provider qwen -
-    -model qwen-plus --embedding-model intfloat/e5-base-v2
+  poetry run python main.py run_rag --question "how does caching work"
+        --provider qwen --model qwen-plus --embedding-model intfloat/e5-base-v2
 
-  poetry run python main.py run_rag --question "how does caching work" --provider openai
-    --model gpt-4o-mini --embedding-model intfloat/e5-base-v2
+  poetry run python main.py run_rag --question "how does caching work"
+        --provider openai --model gpt-4o-mini --embedding-model intfloat/e5-base-v2
 """
 
 from __future__ import annotations
@@ -202,3 +202,7 @@ def main() -> None:
         reranker_model=args.reranker_model,
         rerank_candidates=args.rerank_candidates,
     )
+
+
+if __name__ == "__main__":
+    main()

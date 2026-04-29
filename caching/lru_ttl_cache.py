@@ -2,12 +2,8 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
-from typing import Generic, TypeVar
 
 from pydantic import BaseModel
-
-K = TypeVar("K")
-V = TypeVar("V")
 
 
 class CacheStats(BaseModel):
@@ -21,7 +17,7 @@ class CacheStats(BaseModel):
     evicted_lru: int
 
 
-class CacheEntry(BaseModel, Generic[K, V]):
+class CacheEntry[K, V](BaseModel):
     key: K
     value: V
     created_at: float
@@ -32,7 +28,7 @@ class CacheEntry(BaseModel, Generic[K, V]):
         return (now - self.created_at) >= self.ttl_seconds
 
 
-class LRUTTLCache(Generic[K, V]):
+class LRUTTLCache[K, V]:
     """
     In-memory LRU cache with per-entry TTL expiration.
 

@@ -28,7 +28,7 @@ fi
 # - keep-max-ids-for-multi=3
 # Retrieval / rerank:
 # - retriever=hybrid, k-values=1,3,5,10,20,30, alpha=0.65
-# - rerank=true, reranker-model=models/reranker-failure-driven
+# - rerank=true, reranker-model=$RERANKER_MODEL
 # - rerank-candidates=120, rerank-alpha=0.30
 # - ce-calibration=zscore, ce-temperature=1.0
 # - hybrid-candidate-multiplier=100, hybrid-rrf-k=80
@@ -84,7 +84,7 @@ python main.py evaluation_runner \
   --rerank-alpha 0.30 \
   --rerank-semantic-weight 0.70 \
   --rerank-bm25-weight 0.30 \
-  --reranker-model "models/reranker-failure-driven" \
+  --reranker-model "$RERANKER_MODEL" \
   --out-json experiments/results/retrieval_report_best.json
 
 python main.py dataset_audit \

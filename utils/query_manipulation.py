@@ -174,6 +174,7 @@ def llm_structured_query_expansion(
     This is used when heuristic expansions are insufficient and broader recall
     is required across paraphrase, decomposition, and concept dimensions.
     """
+    # Keep local to avoid circular import: generation.run_rag imports this module.
     from generation.llm import call_llm
     from generation.run_rag import get_llm_config
 
@@ -229,6 +230,7 @@ def llm_structured_query_expansion_batch(
     Batching reduces LLM overhead during evaluation runs where query expansion
     is enabled for large datasets.
     """
+    # Keep local to avoid circular import: generation.run_rag imports this module.
     from generation.llm import call_llm
     from generation.run_rag import get_llm_config
 

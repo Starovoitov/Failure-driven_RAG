@@ -188,15 +188,11 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
             cache_ttl_seconds=args.llm_cache_ttl_seconds,
         )
 
-    total_samples = len(samples)
-    try:
-        from tqdm import tqdm  # type: ignore
+    from tqdm import tqdm
 
-        sample_iter = tqdm(samples, total=total_samples, desc="evaluation_runner", unit="sample")
-        logger.info("tqdm progress bar enabled for evaluation loop")
-    except ImportError:
-        sample_iter = samples
-        logger.warning("tqdm is not available; falling back to plain loop progress logging")
+    total_samples = len(samples)
+    sample_iter = tqdm(samples, total=total_samples, desc="evaluation_runner", unit="sample")
+    logger.info("tqdm progress bar enabled for evaluation loop")
 
     progress_log_step = max(1, total_samples // 20)  # ~5% increments
     for sample_idx, sample in enumerate(sample_iter, start=1):
@@ -814,7 +810,8 @@ def cmd_train_reranker(args: argparse.Namespace) -> None:
     from sentence_transformers.cross_encoder.evaluation import CEBinaryClassificationEvaluator
     from torch.utils.data import DataLoader
 
-    from commands.train_reranker import load_chunk_texts, load_pairwise_samples
+    from commands.train_reranker import load_pairwise_samples
+    from ingestion.loaders import load_chunk_texts
 
     chunk_texts = load_chunk_texts(Path(args.rag_dataset))
     train_examples, val_examples = load_pairwise_samples(

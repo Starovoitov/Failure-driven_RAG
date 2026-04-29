@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pydantic import BaseModel
 from typing import Any
 
 from retrieval.bm25 import BM25Result
 from retrieval.semantic import SemanticResult
 
 
-@dataclass
-class HybridResult:
+class HybridResult(BaseModel):
     """Merged result from semantic + BM25 search."""
 
     doc_id: str

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import dataclass
 import time
 from typing import Generic, TypeVar
+
+from pydantic import BaseModel
 
 K = TypeVar("K")
 V = TypeVar("V")
 
 
-@dataclass(frozen=True)
-class CacheStats:
+class CacheStats(BaseModel):
     hits: int
     misses: int
     size: int
@@ -21,8 +21,7 @@ class CacheStats:
     evicted_lru: int
 
 
-@dataclass
-class CacheEntry(Generic[K, V]):
+class CacheEntry(BaseModel, Generic[K, V]):
     key: K
     value: V
     created_at: float

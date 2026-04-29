@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
+from pydantic import BaseModel
 
 SYSTEM_PROMPT = """
 You are a retrieval-augmented assistant.
@@ -29,8 +29,7 @@ Cite sources after each sentence.
 """.strip()
 
 
-@dataclass
-class SourceChunk:
+class SourceChunk(BaseModel):
     """RAG source chunk with optional retrieval score and metadata."""
 
     doc_id: str

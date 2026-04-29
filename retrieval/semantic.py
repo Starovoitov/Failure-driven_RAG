@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from pydantic import BaseModel, Field
 from math import sqrt
 from typing import Any
 
 
-@dataclass
-class SemanticDocument:
+class SemanticDocument(BaseModel):
     """Document container for semantic search."""
 
     doc_id: str
     text: str
     embedding: list[float]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class SemanticResult:
+class SemanticResult(BaseModel):
     """Returned item for semantic retrieval."""
 
     doc_id: str

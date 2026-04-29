@@ -3,17 +3,16 @@ from __future__ import annotations
 import json
 import hashlib
 import time
-from dataclasses import dataclass
 from typing import Any, Iterator
 
 import requests
+from pydantic import BaseModel
 from caching import LRUTTLCache
 from retry import retry
 from utils.logger import get_json_logger, log_event
 
 
-@dataclass
-class LLMConfig:
+class LLMConfig(BaseModel):
     """Generic runtime settings for LLM calls across providers."""
 
     provider: str = "openai"

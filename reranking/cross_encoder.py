@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
 from enum import StrEnum
 import math
 from typing import Any
 
+from pydantic import BaseModel, Field
 from sentence_transformers import CrossEncoder
 from utils.common import min_max_normalize
 
@@ -47,18 +47,16 @@ def calibrate_ce_scores(
     raise ValueError(f"Unsupported ce_calibration: {mode}")
 
 
-@dataclass(frozen=True)
-class RerankCandidate:
+class RerankCandidate(BaseModel):
     """Candidate passage before reranking."""
 
     doc_id: str
     text: str
     score: float = 0.0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class RerankedResult:
+class RerankedResult(BaseModel):
     """Reranked passage with cross-encoder score."""
 
     doc_id: str
@@ -144,9 +142,8 @@ class CrossEncoderReranker:
         # top1_score <- top1_score + lambda * (top1_score - top2_score)
         if len(reranked) >= 2 and top1_margin_lambda != 0.0:
             margin = reranked[0].score - reranked[1].score
-            reranked[0] = replace(
-                reranked[0],
-                score=reranked[0].score + (top1_margin_lambda * margin),
+            reranked[0] = reranked[0].model_copy(
+                update={"score": reranked[0].score + (top1_margin_lambda * margin)},
             )
             reranked.sort(key=lambda x: x.score, reverse=True)
         return reranked[:top_k]

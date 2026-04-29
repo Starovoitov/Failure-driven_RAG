@@ -1,23 +1,21 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from pydantic import BaseModel, Field
 from typing import Any
 
 from utils.common import tokenize
 
 
-@dataclass
-class BM25Document:
+class BM25Document(BaseModel):
     """Document container for BM25 lexical search."""
 
     doc_id: str
     text: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class BM25Result:
+class BM25Result(BaseModel):
     """Returned item for BM25 retrieval."""
 
     doc_id: str

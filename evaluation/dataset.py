@@ -7,7 +7,7 @@ import random
 import re
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
+from pydantic import BaseModel
 from difflib import SequenceMatcher, get_close_matches
 from pathlib import Path
 from typing import Any
@@ -83,8 +83,7 @@ DEFAULT_STOPWORDS = frozenset(
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
 
 
-@dataclass(frozen=True)
-class EvalBlock:
+class EvalBlock(BaseModel):
     section: str
     question: str
     answer: str
@@ -92,8 +91,7 @@ class EvalBlock:
     noise: str
 
 
-@dataclass(frozen=True)
-class EvalSample:
+class EvalSample(BaseModel):
     query: str
     relevant_docs: list[str]
     reference_answer: str | None = None

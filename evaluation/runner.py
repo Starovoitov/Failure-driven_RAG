@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict, dataclass
+from pydantic import BaseModel
 from pathlib import Path
 from typing import Protocol
 
@@ -31,8 +31,7 @@ class Retriever(Protocol):
         ...
 
 
-@dataclass(frozen=True)
-class QueryRun:
+class QueryRun(BaseModel):
     query: str
     relevant_doc_ids: list[str]
     retrieved_doc_ids: list[str]
@@ -348,7 +347,7 @@ def main() -> None:
         "samples_filtered_out": filtered_out_samples,
         "samples_with_ground_truth": sum(1 for s in samples if s.relevant_docs),
         "metrics": metrics,
-        "runs": [asdict(run) for run in query_runs],
+        "runs": [run.model_dump() for run in query_runs],
     }
 
     print("Retrieval benchmark report")

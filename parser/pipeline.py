@@ -3,17 +3,19 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
+from pydantic import BaseModel
 from parser.chunking import chunk_text, jaccard_similarity_tokens, overlap_tokens, token_count
 from parser.edge_cases import build_edge_cases
-from parser.models import RawChunkRecord
+from parser.models import RawChunkRecord, SourceSpec
 from parser.normalize import normalize_text
 from parser.qa import build_qa_pairs
 from parser.scraper import scrape_source
 from parser.sources import (
+    AliasGroupPayload,
     DEFAULT_SOURCES_CONFIG_PATH,
+    SeedChunkPayload,
     build_alias_groups,
     build_seed_chunks,
     build_sources,
@@ -21,11 +23,23 @@ from parser.sources import (
 from utils.logger import configure_runtime_logger
 
 
+class PipelineStats(BaseModel):
+    raw_chunks: int = 0
+    qa_pairs: int = 0
+    edge_cases: int = 0
+    sources_ok: int = 0
+    skipped_duplicate_urls: int = 0
+    skipped_by_token_filter: int = 0
+    skipped_by_url_cap: int = 0
+    skipped_by_category_cap: int = 0
+    skipped_by_near_duplicate: int = 0
+
+
 def _contains_phrase(text_lower: str, phrase: str) -> bool:
     return phrase.lower() in text_lower
 
 
-def enrich_chunk_aliases(chunk_text: str, alias_groups: tuple[tuple[str, tuple[str, ...]], ...]) -> str:
+def enrich_chunk_aliases(chunk_text: str, alias_groups: tuple[AliasGroupPayload, ...]) -> str:
     """
     Add compact alias bridges to improve lexical + semantic retrievability.
 
@@ -37,7 +51,8 @@ def enrich_chunk_aliases(chunk_text: str, alias_groups: tuple[tuple[str, tuple[s
 
     lowered = chunk.lower()
     bridge_clauses: list[str] = []
-    for primary, aliases in alias_groups:
+    for group in alias_groups:
+        primary, aliases = group.primary, tuple(group.aliases)
         terms = (primary, *aliases)
         present_terms = [term for term in terms if _contains_phrase(lowered, term)]
         if not present_terms:
@@ -55,13 +70,13 @@ def enrich_chunk_aliases(chunk_text: str, alias_groups: tuple[tuple[str, tuple[s
 def _add_multihop_seed_chunks(
     *,
     f: Any,
-    counters: dict[str, int],
+    counters: PipelineStats,
     min_output_chunk_tokens: int,
     max_output_chunk_tokens: int,
-    alias_groups: tuple[tuple[str, tuple[str, ...]], ...],
-    seed_chunks: tuple[dict[str, str], ...],
+    alias_groups: tuple[AliasGroupPayload, ...],
+    seed_chunks: tuple[SeedChunkPayload, ...],
 ) -> None:
-    pseudo_source = SimpleNamespace(
+    pseudo_source = SourceSpec(
         url="seed://multi-hop-retrieval",
         category="advanced_rag_ideas",
         subtopic="multi_hop_retrieval",
@@ -77,16 +92,16 @@ def _add_multihop_seed_chunks(
     )
 
     for idx, seed in enumerate(seed_chunks):
-        text = f"Title: {seed['title']}\n\nContent:\n{seed['content']}".strip()
+        text = f"Title: {seed.title}\n\nContent:\n{seed.content}".strip()
         enriched = enrich_chunk_aliases(text, alias_groups=alias_groups)
         chunk_tokens = token_count(enriched)
         if chunk_tokens < min_output_chunk_tokens or chunk_tokens > max_output_chunk_tokens:
-            counters["skipped_by_token_filter"] += 1
+            counters.skipped_by_token_filter += 1
             continue
 
         metadata = enrich_metadata(
             source=pseudo_source,
-            title=seed["title"],
+            title=seed.title,
             chunk_index=idx,
             chunk_text=enriched,
             scraped_at="1970-01-01T00:00:00+00:00",
@@ -100,7 +115,7 @@ def _add_multihop_seed_chunks(
             metadata=metadata,
         )
         f.write(json.dumps(raw.to_dict(), ensure_ascii=False) + "\n")
-        counters["raw_chunks"] += 1
+        counters.raw_chunks += 1
 
         for qa in build_qa_pairs(
             chunk_text=enriched,
@@ -108,7 +123,7 @@ def _add_multihop_seed_chunks(
             priority_topics=pseudo_source.priority_topics,
         ):
             f.write(json.dumps(qa.to_dict(), ensure_ascii=False) + "\n")
-            counters["qa_pairs"] += 1
+            counters.qa_pairs += 1
 
 
 def run_pipeline(
@@ -137,17 +152,7 @@ def run_pipeline(
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    counters = {
-        "raw_chunks": 0,
-        "qa_pairs": 0,
-        "edge_cases": 0,
-        "sources_ok": 0,
-        "skipped_duplicate_urls": 0,
-        "skipped_by_token_filter": 0,
-        "skipped_by_url_cap": 0,
-        "skipped_by_category_cap": 0,
-        "skipped_by_near_duplicate": 0,
-    }
+    counters = PipelineStats()
     sources = build_sources(config_path=sources_config)
     alias_groups = build_alias_groups(config_path=sources_config)
     seed_chunks = build_seed_chunks(config_path=sources_config)
@@ -161,7 +166,7 @@ def run_pipeline(
     with out.open("w", encoding="utf-8") as f:
         for source_idx, source in enumerate(sources, start=1):
             if source.url in seen_urls:
-                counters["skipped_duplicate_urls"] += 1
+                counters.skipped_duplicate_urls += 1
                 logger.warning("skipping duplicate URL in sources config: %s", source.url)
                 continue
             seen_urls.add(source.url)
@@ -173,12 +178,12 @@ def run_pipeline(
                 source.subtopic,
                 source.url,
             )
-            source_raw_before = counters["raw_chunks"]
-            source_qa_before = counters["qa_pairs"]
-            source_skipped_token_before = counters["skipped_by_token_filter"]
-            source_skipped_url_before = counters["skipped_by_url_cap"]
-            source_skipped_category_before = counters["skipped_by_category_cap"]
-            source_skipped_near_dup_before = counters["skipped_by_near_duplicate"]
+            source_raw_before = counters.raw_chunks
+            source_qa_before = counters.qa_pairs
+            source_skipped_token_before = counters.skipped_by_token_filter
+            source_skipped_url_before = counters.skipped_by_url_cap
+            source_skipped_category_before = counters.skipped_by_category_cap
+            source_skipped_near_dup_before = counters.skipped_by_near_duplicate
             try:
                 parsed = scrape_source(source)
             except Exception as exc:  # noqa: BLE001
@@ -198,7 +203,7 @@ def run_pipeline(
                 f.write(json.dumps(err, ensure_ascii=False) + "\n")
                 continue
 
-            counters["sources_ok"] += 1
+            counters.sources_ok += 1
             normalized = normalize_text(parsed.text)
             chunks = chunk_text(
                 normalized,
@@ -213,21 +218,21 @@ def run_pipeline(
                 enriched_chunk = enrich_chunk_aliases(chunk, alias_groups=alias_groups)
                 chunk_tokens = token_count(enriched_chunk)
                 if chunk_tokens < min_output_chunk_tokens or chunk_tokens > max_output_chunk_tokens:
-                    counters["skipped_by_token_filter"] += 1
+                    counters.skipped_by_token_filter += 1
                     continue
 
                 url_count = chunks_per_url.get(source.url, 0)
                 if max_chunks_per_url > 0 and url_count >= max_chunks_per_url:
-                    counters["skipped_by_url_cap"] += 1
+                    counters.skipped_by_url_cap += 1
                     continue
                 category_count = chunks_per_category.get(source.category, 0)
                 if max_chunks_per_category > 0 and category_count >= max_chunks_per_category:
-                    counters["skipped_by_category_cap"] += 1
+                    counters.skipped_by_category_cap += 1
                     continue
                 if near_duplicate_jaccard > 0:
                     previous_chunks = accepted_chunks_by_url.get(source.url, [])
                     if any(jaccard_similarity_tokens(chunk, prev) >= near_duplicate_jaccard for prev in previous_chunks):
-                        counters["skipped_by_near_duplicate"] += 1
+                        counters.skipped_by_near_duplicate += 1
                         continue
 
                 metadata = enrich_metadata(
@@ -246,7 +251,7 @@ def run_pipeline(
                     metadata=metadata,
                 )
                 f.write(json.dumps(raw.to_dict(), ensure_ascii=False) + "\n")
-                counters["raw_chunks"] += 1
+                counters.raw_chunks += 1
                 chunks_per_url[source.url] = url_count + 1
                 chunks_per_category[source.category] = category_count + 1
                 accepted_chunks_by_url.setdefault(source.url, []).append(chunk)
@@ -257,7 +262,7 @@ def run_pipeline(
                     priority_topics=source.priority_topics,
                 ):
                     f.write(json.dumps(qa.to_dict(), ensure_ascii=False) + "\n")
-                    counters["qa_pairs"] += 1
+                    counters.qa_pairs += 1
 
             sample_metadata: dict[str, Any] = {
                 "url": source.url,
@@ -267,20 +272,20 @@ def run_pipeline(
             }
             for edge_case in build_edge_cases(sample_metadata):
                 f.write(json.dumps(edge_case.to_dict(), ensure_ascii=False) + "\n")
-                counters["edge_cases"] += 1
+                counters.edge_cases += 1
             logger.info(
                 "source complete %s/%s: raw_chunks=%s qa_pairs=%s skipped(token/url/category/near_dup)=%s/%s/%s/%s",
                 source_idx,
                 total_sources,
-                counters["raw_chunks"] - source_raw_before,
-                counters["qa_pairs"] - source_qa_before,
-                counters["skipped_by_token_filter"] - source_skipped_token_before,
-                counters["skipped_by_url_cap"] - source_skipped_url_before,
-                counters["skipped_by_category_cap"] - source_skipped_category_before,
-                counters["skipped_by_near_duplicate"] - source_skipped_near_dup_before,
+                counters.raw_chunks - source_raw_before,
+                counters.qa_pairs - source_qa_before,
+                counters.skipped_by_token_filter - source_skipped_token_before,
+                counters.skipped_by_url_cap - source_skipped_url_before,
+                counters.skipped_by_category_cap - source_skipped_category_before,
+                counters.skipped_by_near_duplicate - source_skipped_near_dup_before,
             )
-        seed_raw_before = counters["raw_chunks"]
-        seed_qa_before = counters["qa_pairs"]
+        seed_raw_before = counters.raw_chunks
+        seed_qa_before = counters.qa_pairs
         _add_multihop_seed_chunks(
             f=f,
             counters=counters,
@@ -291,12 +296,12 @@ def run_pipeline(
         )
         logger.info(
             "multihop seed chunks added: raw_chunks=%s qa_pairs=%s",
-            counters["raw_chunks"] - seed_raw_before,
-            counters["qa_pairs"] - seed_qa_before,
+            counters.raw_chunks - seed_raw_before,
+            counters.qa_pairs - seed_qa_before,
         )
 
-    logger.info("parser pipeline completed: %s", json.dumps(counters, ensure_ascii=False))
-    return counters
+    logger.info("parser pipeline completed: %s", counters.model_dump_json())
+    return counters.model_dump()
 
 
 def enrich_metadata(

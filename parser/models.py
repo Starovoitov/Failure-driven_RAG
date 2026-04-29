@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from pydantic import BaseModel, Field
 from typing import Any
 
 
@@ -10,8 +10,7 @@ def utc_now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
-@dataclass
-class SourceSpec:
+class SourceSpec(BaseModel):
     category: str
     subtopic: str
     url: str
@@ -19,16 +18,14 @@ class SourceSpec:
     priority_topics: list[str]
 
 
-@dataclass
-class ParsedDocument:
+class ParsedDocument(BaseModel):
     source: SourceSpec
     title: str
     text: str
-    scraped_at: str = field(default_factory=utc_now_iso)
+    scraped_at: str = Field(default_factory=utc_now_iso)
 
 
-@dataclass
-class RawChunkRecord:
+class RawChunkRecord(BaseModel):
     record_type: str
     chunk_id: str
     text: str
@@ -37,11 +34,10 @@ class RawChunkRecord:
     metadata: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return self.model_dump()
 
 
-@dataclass
-class QAPairRecord:
+class QAPairRecord(BaseModel):
     record_type: str
     qa_id: str
     question: str
@@ -49,11 +45,10 @@ class QAPairRecord:
     metadata: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return self.model_dump()
 
 
-@dataclass
-class EdgeCaseRecord:
+class EdgeCaseRecord(BaseModel):
     record_type: str
     edge_case_id: str
     edge_case_type: str
@@ -64,5 +59,5 @@ class EdgeCaseRecord:
     metadata: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return self.model_dump()
 

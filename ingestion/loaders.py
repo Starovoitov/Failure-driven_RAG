@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterator
 
+from pydantic import BaseModel, Field
 from embeddings.embedder import generate_embeddings, upsert_embeddings_to_faiss
 from embeddings.faiss_store import load_semantic_documents_from_faiss as load_from_faiss_store
 from parser.pipeline import run_pipeline
@@ -11,6 +12,12 @@ from retrieval.semantic import SemanticDocument
 
 
 DEFAULT_EMBEDDING_MODEL = "intfloat/e5-base-v2"
+
+
+class EmbeddingInputRecord(BaseModel):
+    id: str
+    text: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 def _read_raw_chunks(dataset_path: str) -> Iterator[dict[str, Any]]:
@@ -47,12 +54,12 @@ def run_parser_and_upsert_to_faiss(
     raw_chunks_count = 0
     with embedding_input_path.open("w", encoding="utf-8") as out:
         for row in _read_raw_chunks(dataset_path):
-            payload = {
-                "id": row["chunk_id"],
-                "text": row["text"],
-                "metadata": row.get("metadata", {}),
-            }
-            out.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            payload = EmbeddingInputRecord(
+                id=str(row["chunk_id"]),
+                text=str(row["text"]),
+                metadata=dict(row.get("metadata", {})),
+            )
+            out.write(json.dumps(payload.model_dump(), ensure_ascii=False) + "\n")
             raw_chunks_count += 1
 
     records = generate_embeddings(

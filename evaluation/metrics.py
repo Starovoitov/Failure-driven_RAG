@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from dataclasses import dataclass
+from pydantic import BaseModel
 
 
-@dataclass(frozen=True)
-class RetrievalResult:
+class RetrievalResult(BaseModel):
     query: str
     retrieved_doc_ids: list[str]
     relevant_doc_ids: list[str]

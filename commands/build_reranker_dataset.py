@@ -2,20 +2,59 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import BaseModel
 from ingestion.loaders import load_chunk_texts
 from utils.common import rank_weight
 
 
-def _extract_failure_sample_fields(sample: dict) -> dict[str, object]:
-    return {
-        "query": str(sample.get("query", "")).strip(),
-        "positives": [str(doc_id) for doc_id in sample.get("relevant_doc_ids", [])],
-        "retrieved": [str(doc_id) for doc_id in sample.get("retrieved_top_k_doc_ids", [])],
-        "retrieved_full": [str(doc_id) for doc_id in sample.get("retrieved_full_doc_ids", [])],
-        "bm25_branch": [str(doc_id) for doc_id in sample.get("bm25_branch_doc_ids", [])],
-        "bucket": str(sample.get("bucket", "")),
-        "source_miss_type": str(sample.get("source_miss_type", "")),
-    }
+class FailureSampleFields(BaseModel):
+    query: str
+    positives: list[str]
+    retrieved: list[str]
+    retrieved_full: list[str]
+    bm25_branch: list[str]
+    bucket: str
+    source_miss_type: str
+
+
+class RerankerContext(BaseModel):
+    schema_version: str = "reranker_context_v1"
+    query: str
+    positives: list[str]
+    negatives: list[str]
+    weights: dict[str, float]
+    failure_bucket: str
+    source_miss_type: str
+
+
+class BuildContextsStats(BaseModel):
+    samples_seen: int = 0
+    samples_used: int = 0
+    contexts_written: int = 0
+    missing_positive_text: int = 0
+    missing_negative_text: int = 0
+    contexts_ranking_cutoff_failure: int = 0
+    contexts_true_recall_failure: int = 0
+    contexts_other: int = 0
+
+
+def _stats_inc(stats: BuildContextsStats | dict[str, int], key: str) -> None:
+    if isinstance(stats, dict):
+        stats[key] = int(stats.get(key, 0)) + 1
+        return
+    setattr(stats, key, int(getattr(stats, key, 0)) + 1)
+
+
+def _extract_failure_sample_fields(sample: dict) -> FailureSampleFields:
+    return FailureSampleFields(
+        query=str(sample.get("query", "")).strip(),
+        positives=[str(doc_id) for doc_id in sample.get("relevant_doc_ids", [])],
+        retrieved=[str(doc_id) for doc_id in sample.get("retrieved_top_k_doc_ids", [])],
+        retrieved_full=[str(doc_id) for doc_id in sample.get("retrieved_full_doc_ids", [])],
+        bm25_branch=[str(doc_id) for doc_id in sample.get("bm25_branch_doc_ids", [])],
+        bucket=str(sample.get("bucket", "")),
+        source_miss_type=str(sample.get("source_miss_type", "")),
+    )
 
 
 def _sample_weight_for_bucket(
@@ -35,12 +74,12 @@ def _sample_weight_for_bucket(
 def _collect_positive_ids(
     positives: list[str],
     chunk_texts: dict[str, str],
-    stats: dict[str, int],
+    stats: BuildContextsStats | dict[str, int],
 ) -> list[str]:
     positive_ids: list[str] = []
     for positive_id in positives:
         if positive_id not in chunk_texts:
-            stats["missing_positive_text"] += 1
+            _stats_inc(stats, "missing_positive_text")
             continue
         positive_ids.append(positive_id)
     return positive_ids
@@ -70,7 +109,7 @@ def _collect_negative_ids(
     chunk_texts: dict[str, str],
     sample_weight: float,
     max_negatives: int,
-    stats: dict[str, int],
+    stats: BuildContextsStats | dict[str, int],
 ) -> tuple[list[str], dict[str, float]]:
     negative_ids: list[str] = []
     negative_weights: dict[str, float] = {}
@@ -82,7 +121,7 @@ def _collect_negative_ids(
         if negative_id in positive_set:
             continue
         if negative_id not in chunk_texts:
-            stats["missing_negative_text"] += 1
+            _stats_inc(stats, "missing_negative_text")
             continue
         if negative_id in negative_weights:
             continue
@@ -103,14 +142,14 @@ def _collect_negative_ids(
     return negative_ids, negative_weights
 
 
-def _update_context_bucket_stats(stats: dict[str, int], bucket: str) -> None:
-    stats["contexts_written"] += 1
+def _update_context_bucket_stats(stats: BuildContextsStats, bucket: str) -> None:
+    stats.contexts_written += 1
     if bucket == "ranking_cutoff_failure":
-        stats["contexts_ranking_cutoff_failure"] += 1
+        stats.contexts_ranking_cutoff_failure += 1
     elif bucket == "true_recall_failure":
-        stats["contexts_true_recall_failure"] += 1
+        stats.contexts_true_recall_failure += 1
     else:
-        stats["contexts_other"] += 1
+        stats.contexts_other += 1
 
 
 def build_contexts(
@@ -130,28 +169,19 @@ def build_contexts(
     if not samples:
         samples = failure_analysis.get("manual_inspection_samples", [])
 
-    contexts: list[dict[str, object]] = []
-    stats = {
-        "samples_seen": 0,
-        "samples_used": 0,
-        "contexts_written": 0,
-        "missing_positive_text": 0,
-        "missing_negative_text": 0,
-        "contexts_ranking_cutoff_failure": 0,
-        "contexts_true_recall_failure": 0,
-        "contexts_other": 0,
-    }
+    contexts: list[RerankerContext] = []
+    stats = BuildContextsStats()
 
     for sample in samples:
-        stats["samples_seen"] += 1
+        stats.samples_seen += 1
         fields = _extract_failure_sample_fields(sample)
-        query = str(fields["query"])
-        positives = list(fields["positives"])
-        retrieved = list(fields["retrieved"])
-        retrieved_full = list(fields["retrieved_full"])
-        bm25_branch = list(fields["bm25_branch"])
-        bucket = str(fields["bucket"])
-        source_miss_type = str(fields["source_miss_type"])
+        query = fields.query
+        positives = fields.positives
+        retrieved = fields.retrieved
+        retrieved_full = fields.retrieved_full
+        bm25_branch = fields.bm25_branch
+        bucket = fields.bucket
+        source_miss_type = fields.source_miss_type
         sample_weight = _sample_weight_for_bucket(
             bucket,
             ranking_cutoff_weight=ranking_cutoff_weight,
@@ -162,7 +192,7 @@ def build_contexts(
         if not query or not positives or not retrieved:
             continue
 
-        stats["samples_used"] += 1
+        stats.samples_used += 1
         positive_ids = _collect_positive_ids(positives, chunk_texts, stats)
         negative_pool = _build_negative_pool(
             bucket=bucket,
@@ -186,17 +216,16 @@ def build_contexts(
             continue
 
         contexts.append(
-            {
-                "schema_version": "reranker_context_v1",
-                "query": query,
-                "positives": positive_ids,
-                "negatives": negative_ids,
-                "weights": negative_weights,
-                "failure_bucket": bucket,
-                "source_miss_type": source_miss_type,
-            }
+            RerankerContext(
+                query=query,
+                positives=positive_ids,
+                negatives=negative_ids,
+                weights=negative_weights,
+                failure_bucket=bucket,
+                source_miss_type=source_miss_type,
+            )
         )
         _update_context_bucket_stats(stats, bucket)
 
-    return contexts, stats
+    return [item.model_dump() for item in contexts], stats.model_dump()
 

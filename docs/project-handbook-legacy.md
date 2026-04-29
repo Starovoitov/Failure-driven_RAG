@@ -2,7 +2,7 @@
 
 This document contains the previous root `README.md` content, moved to `docs/` to keep historical setup and workflow notes in one place.
 
-## RAG Agent
+## RAG FD
 
 RAG-focused project for:
 - parsing and preparing a JSONL dataset,

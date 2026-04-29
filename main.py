@@ -191,7 +191,13 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
     from tqdm import tqdm
 
     total_samples = len(samples)
-    sample_iter = tqdm(samples, total=total_samples, desc="evaluation_runner", unit="sample")
+    sample_iter = tqdm(
+        samples,
+        total=total_samples,
+        desc="evaluation_runner",
+        unit="sample",
+        file=sys.stdout,
+    )
     logger.info("tqdm progress bar enabled for evaluation loop")
 
     progress_log_step = max(1, total_samples // 20)  # ~5% increments

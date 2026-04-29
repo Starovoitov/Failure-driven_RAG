@@ -10,4 +10,5 @@ experiments/results/*
 experiments/logs/
 models/eval/*
 poetry.lock
+FE/node_modules/*
 .vscode/*

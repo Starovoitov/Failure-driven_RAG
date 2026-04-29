@@ -4,11 +4,14 @@ import argparse
 import contextlib
 import io
 import json
+import threading
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import Body, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from main import REQUIRED_COMMAND_PARAMS, build_parser
@@ -36,11 +39,61 @@ class CommandResponse(BaseModel):
     result: dict[str, Any] | None = None
 
 
+class CommandTaskStartResponse(BaseModel):
+    task_id: str
+    command: str
+    argv: list[str]
+    status: Literal["running"]
+
+
+class CommandTaskStatusResponse(BaseModel):
+    task_id: str
+    command: str
+    argv: list[str]
+    status: Literal["running", "completed", "failed"]
+    stdout: str
+    stderr: str
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class FileStatusRequest(BaseModel):
+    paths: list[str]
+
+
+class FileStatusItem(BaseModel):
+    path: str
+    exists: bool
+    is_dir: bool = False
+    size_bytes: int | None = None
+    modified_ts: float | None = None
+
+
+class FileStatusResponse(BaseModel):
+    items: list[FileStatusItem]
+
+
 @dataclass
 class CommandSpec:
     model: type[BaseModel]
     actions: dict[str, argparse.Action]
     example_payload: dict[str, Any]
+
+
+@dataclass
+class CommandTask:
+    task_id: str
+    command: str
+    argv: list[str]
+    status: Literal["running", "completed", "failed"]
+    stdout_buffer: io.StringIO
+    stderr_buffer: io.StringIO
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+
+TASKS: dict[str, CommandTask] = {}
+TASKS_LOCK = threading.Lock()
 
 
 def _extract_subparsers(parser: argparse.ArgumentParser) -> argparse._SubParsersAction:
@@ -119,7 +172,7 @@ def _build_command_specs() -> dict[str, CommandSpec]:
 COMMAND_SPECS = _build_command_specs()
 
 app = FastAPI(
-    title="RAG Agent Command API",
+    title="RAG FD Command API",
     description=(
         "REST wrapper over primary CLI commands with full flag coverage.\n\n"
         "Swagger UI: `/docs`\n"
@@ -130,6 +183,14 @@ app = FastAPI(
         {"name": "commands", "description": "Execute primary CLI workflows via REST."},
         {"name": "meta", "description": "Service health and metadata endpoints."},
     ],
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -155,6 +216,16 @@ def execute_cli_command(command: str, payload: BaseModel) -> CommandResponse:
 
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
+    return _execute_with_captured_streams(parser, command, argv, stdout_buffer, stderr_buffer)
+
+
+def _execute_with_captured_streams(
+    parser: argparse.ArgumentParser,
+    command: str,
+    argv: list[str],
+    stdout_buffer: io.StringIO,
+    stderr_buffer: io.StringIO,
+) -> CommandResponse:
     try:
         args = parser.parse_args(argv)
         config_path = Path.cwd() / DEFAULT_CLI_PARAMS_CONFIG
@@ -194,6 +265,74 @@ def execute_cli_command(command: str, payload: BaseModel) -> CommandResponse:
     )
 
 
+def _run_task_worker(task_id: str, command: str, payload: BaseModel) -> None:
+    parser = build_parser()
+    spec = COMMAND_SPECS[command]
+    argv = _build_argv(command, payload, spec.actions)
+    with TASKS_LOCK:
+        task = TASKS[task_id]
+        task.argv = argv
+    try:
+        response = _execute_with_captured_streams(
+            parser=parser,
+            command=command,
+            argv=argv,
+            stdout_buffer=task.stdout_buffer,
+            stderr_buffer=task.stderr_buffer,
+        )
+        with TASKS_LOCK:
+            task.result = response.result
+            task.status = "completed"
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {"error": str(exc.detail)}
+        with TASKS_LOCK:
+            task.error = json.dumps(detail, ensure_ascii=False)
+            task.status = "failed"
+    except Exception as exc:  # noqa: BLE001
+        with TASKS_LOCK:
+            task.error = str(exc)
+            task.status = "failed"
+
+
+def start_async_task(command: str, payload: BaseModel) -> CommandTaskStartResponse:
+    task_id = uuid.uuid4().hex
+    task = CommandTask(
+        task_id=task_id,
+        command=command,
+        argv=[],
+        status="running",
+        stdout_buffer=io.StringIO(),
+        stderr_buffer=io.StringIO(),
+    )
+    with TASKS_LOCK:
+        TASKS[task_id] = task
+
+    thread = threading.Thread(
+        target=_run_task_worker,
+        args=(task_id, command, payload),
+        daemon=True,
+    )
+    thread.start()
+    return CommandTaskStartResponse(task_id=task_id, command=command, argv=task.argv, status="running")
+
+
+def get_task_status(task_id: str) -> CommandTaskStatusResponse:
+    with TASKS_LOCK:
+        task = TASKS.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail={"error": f"Task not found: {task_id}"})
+        return CommandTaskStatusResponse(
+            task_id=task.task_id,
+            command=task.command,
+            argv=task.argv,
+            status=task.status,
+            stdout=task.stdout_buffer.getvalue(),
+            stderr=task.stderr_buffer.getvalue(),
+            result=task.result,
+            error=task.error,
+        )
+
+
 def _register_command_route(command: str, spec: CommandSpec) -> None:
     body = (
         Body(..., examples={"default": {"summary": "Config defaults", "value": spec.example_payload}})
@@ -217,6 +356,22 @@ def _register_command_route(command: str, spec: CommandSpec) -> None:
         ),
     )(_run)
 
+    def _run_async(payload: BaseModel = body) -> CommandTaskStartResponse:
+        return start_async_task(command, payload)
+
+    _run_async.__annotations__ = {"payload": spec.model, "return": CommandTaskStartResponse}
+    app.post(
+        f"/{command}/async",
+        response_model=CommandTaskStartResponse,
+        tags=["commands"],
+        operation_id=f"run_{command}_async",
+        summary=f"Run `{command}` command asynchronously",
+        description=(
+            f"Starts `{command}` in background and returns task id for polling "
+            "via `GET /tasks/{task_id}`."
+        ),
+    )(_run_async)
+
 
 for command_name, command_spec in COMMAND_SPECS.items():
     _register_command_route(command_name, command_spec)
@@ -225,4 +380,40 @@ for command_name, command_spec in COMMAND_SPECS.items():
 @app.get("/health", tags=["meta"])
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/tasks/{task_id}", response_model=CommandTaskStatusResponse, tags=["meta"])
+def task_status(task_id: str) -> CommandTaskStatusResponse:
+    return get_task_status(task_id)
+
+
+@app.post("/files/status", response_model=FileStatusResponse, tags=["meta"])
+def files_status(payload: FileStatusRequest) -> FileStatusResponse:
+    items: list[FileStatusItem] = []
+    cwd = Path.cwd()
+    for raw_path in payload.paths:
+        resolved = (cwd / raw_path).resolve()
+        try:
+            relative = resolved.relative_to(cwd.resolve())
+        except ValueError:
+            # Skip paths outside workspace root.
+            items.append(FileStatusItem(path=raw_path, exists=False))
+            continue
+
+        path = cwd / relative
+        if not path.exists():
+            items.append(FileStatusItem(path=raw_path, exists=False))
+            continue
+
+        stat = path.stat()
+        items.append(
+            FileStatusItem(
+                path=raw_path,
+                exists=True,
+                is_dir=path.is_dir(),
+                size_bytes=None if path.is_dir() else stat.st_size,
+                modified_ts=stat.st_mtime,
+            )
+        )
+    return FileStatusResponse(items=items)
 

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import time
 import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from api.server import app
+from api.server import CommandResponse, app
 
 
 class TestApiServer(unittest.TestCase):
@@ -140,6 +141,51 @@ class TestApiServer(unittest.TestCase):
         )
         self.assertEqual(schema["properties"]["k_values"]["default"], "1,3,5")
         self.assertEqual(schema["properties"]["retriever"]["default"], "semantic")
+
+    def test_cors_preflight_for_demo_retrieval(self) -> None:
+        response = self.client.options(
+            "/demo_retrieval",
+            headers={
+                "Origin": "http://example.com",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("access-control-allow-origin"), "*")
+
+    def test_async_command_polling(self) -> None:
+        with patch("api.server._execute_with_captured_streams") as execute:
+            execute.return_value = CommandResponse(
+                command="demo_retrieval",
+                argv=["demo_retrieval"],
+                stdout="done\n",
+                stderr="",
+                result=None,
+            )
+            start = self.client.post("/demo_retrieval/async", json={"query": "x"})
+            self.assertEqual(start.status_code, 200)
+            task_id = start.json()["task_id"]
+
+            status = None
+            for _ in range(20):
+                status = self.client.get(f"/tasks/{task_id}")
+                self.assertEqual(status.status_code, 200)
+                if status.json()["status"] != "running":
+                    break
+                time.sleep(0.01)
+            self.assertIsNotNone(status)
+            self.assertEqual(status.json()["status"], "completed")
+
+    def test_files_status_endpoint(self) -> None:
+        response = self.client.post(
+            "/files/status",
+            json={"paths": ["README.md", "data/faiss", "definitely_missing.file"]},
+        )
+        self.assertEqual(response.status_code, 200)
+        items = {item["path"]: item for item in response.json()["items"]}
+        self.assertTrue(items["README.md"]["exists"])
+        self.assertIn("is_dir", items["data/faiss"])
+        self.assertFalse(items["definitely_missing.file"]["exists"])
 
 
 if __name__ == "__main__":

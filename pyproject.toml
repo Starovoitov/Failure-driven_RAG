@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "rag-agent-parser"
+name = "rag-fd-parser"
 version = "0.1.0"
 description = "RAG data parsing pipeline for scraping, chunking, and JSONL export."
 authors = ["astarovo <astarovo@example.com>"]

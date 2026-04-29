@@ -1,4 +1,4 @@
-# RAG Agent
+# RAG FD
 
 ## Installation and Tests
 
@@ -396,7 +396,7 @@ Saved JSON report to experiments/results/retrieval_report_best.json
   "quality_score": 0.7106111142517949
 }
 ```
-# RAG Agent
+# RAG FD
 
 RAG-focused project for:
 - parsing and preparing a JSONL dataset,
@@ -444,6 +444,21 @@ Open OpenAPI JSON:
 
 Each command has a dedicated `POST /<command>` endpoint and includes its CLI flags in the request
 schema.
+
+## React frontend
+
+A simple React UI is available in `FE/` for calling FastAPI command endpoints.
+
+```bash
+cd FE
+npm install
+npm run dev
+```
+
+Frontend default URL:
+- `http://127.0.0.1:5173`
+
+Configure backend URL in the UI (default is `http://127.0.0.1:8000`).
 
 Caching support:
 - `caching/lru_ttl_cache.py` provides in-memory LRU + TTL cache primitives

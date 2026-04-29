@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,15 @@ class JsonFormatter(logging.Formatter):
         if isinstance(payload, dict):
             base.update(payload)
         return json.dumps(base, ensure_ascii=False)
+
+
+class _MaxLevelFilter(logging.Filter):
+    def __init__(self, max_level: int) -> None:
+        super().__init__()
+        self.max_level = max_level
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno <= self.max_level
 
 
 def get_json_logger(name_prefix: str, log_path: str) -> logging.Logger:
@@ -52,7 +62,7 @@ def configure_runtime_logger(
     """
     Create/reuse a runtime logger for CLI flows.
 
-    - Always logs to stderr.
+    - Always logs to stdout.
     - Optionally writes to file when `log_path` is provided.
     - Supports text or JSON formatting.
     """
@@ -61,7 +71,9 @@ def configure_runtime_logger(
     logger.propagate = False
 
     if logger.handlers:
-        return logger
+        for handler in list(logger.handlers):
+            logger.removeHandler(handler)
+            handler.close()
 
     if json_logs:
         formatter: logging.Formatter = JsonFormatter()
@@ -71,9 +83,15 @@ def configure_runtime_logger(
             datefmt="%Y-%m-%d %H:%M:%S",
         )
 
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    stdout_handler.addFilter(_MaxLevelFilter(logging.WARNING))
+    logger.addHandler(stdout_handler)
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(formatter)
+    stderr_handler.setLevel(logging.ERROR)
+    logger.addHandler(stderr_handler)
 
     if log_path:
         path = Path(log_path)

@@ -1,4 +1,4 @@
-# RAG Agent Architecture
+# RAG FD Architecture
 
 ## Purpose
 

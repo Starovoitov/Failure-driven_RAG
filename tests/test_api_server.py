@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import unittest
 from unittest.mock import patch
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -139,8 +140,8 @@ class TestApiServer(unittest.TestCase):
         self.assertEqual(
             schema["properties"]["dataset"]["default"], "data/evaluation_with_evidence.jsonl"
         )
-        self.assertEqual(schema["properties"]["k_values"]["default"], "1,3,5")
-        self.assertEqual(schema["properties"]["retriever"]["default"], "semantic")
+        self.assertEqual(schema["properties"]["k_values"]["default"], "1,3,5,10,20,30")
+        self.assertEqual(schema["properties"]["retriever"]["default"], "hybrid")
 
     def test_cors_preflight_for_demo_retrieval(self) -> None:
         response = self.client.options(
@@ -186,6 +187,27 @@ class TestApiServer(unittest.TestCase):
         self.assertTrue(items["README.md"]["exists"])
         self.assertIn("is_dir", items["data/faiss"])
         self.assertFalse(items["definitely_missing.file"]["exists"])
+
+    def test_files_content_endpoint_json(self) -> None:
+        response = self.client.post("/files/content", json={"path": "cli.defaults.json"})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["content_type"], "json")
+        self.assertIn("commands", body["content"])
+
+    def test_files_content_endpoint_jsonl(self) -> None:
+        temp_path = Path("data/test_view.jsonl")
+        temp_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path.write_text('{"id": 1, "name": "row"}\n', encoding="utf-8")
+        try:
+            response = self.client.post("/files/content", json={"path": str(temp_path)})
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertEqual(body["content_type"], "jsonl")
+            self.assertIn('"id": 1', body["content"])
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
 
 
 if __name__ == "__main__":

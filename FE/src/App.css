@@ -124,6 +124,29 @@ button:disabled {
   font-family: monospace;
 }
 
+.file-chip-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid #405074;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-family: monospace;
+  background: #0f1521;
+  color: #eaf0ff;
+}
+
+.file-chip-link.ok {
+  border-color: #2c805d;
+  background: #13271f;
+}
+
+.file-chip-link.missing {
+  border-color: #8f2b4a;
+  background: #2a1420;
+}
+
 .file-chip.ok {
   border-color: #2c805d;
   background: #13271f;
@@ -146,14 +169,58 @@ button:disabled {
   font-size: 13px;
 }
 
+.json-table-wrap {
+  overflow: auto;
+  max-height: 70vh;
+}
+
+.json-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.json-table th,
+.json-table td {
+  border: 1px solid #2d3951;
+  padding: 6px 8px;
+  vertical-align: top;
+  text-align: left;
+}
+
+.json-table th {
+  background: #0f1521;
+}
+
 pre {
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
 }
 
+.output-pre {
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 360px;
+  padding: 8px;
+  border: 1px solid #2d3951;
+  border-radius: 6px;
+  background: #0f1521;
+}
+
 .error {
   border-color: #8f2b4a;
+}
+
+.success-message {
+  color: #87d7b0;
+  margin: 0 0 10px;
+}
+
+.error-message {
+  color: #f1a1b8;
+  margin: 0 0 10px;
 }
 
 @media (max-width: 1000px) {

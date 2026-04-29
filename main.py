@@ -491,9 +491,7 @@ def cmd_evaluation_runner(args: argparse.Namespace) -> None:
     reranker_dataset_export: dict[str, object] | None = None
     reranker_training_result: dict[str, object] | None = None
     if args.export_reranker_train_jsonl or args.train_reranker:
-        out_jsonl = Path(
-            args.export_reranker_train_jsonl or "artifacts/datasets/reranker_train.jsonl"
-        )
+        out_jsonl = Path(args.export_reranker_train_jsonl or "data/reranker_train.jsonl")
         context_build_result = build_reranker_training_contexts_from_failures(
             failure_records=failure_records,
             doc_text_map=doc_text_map,

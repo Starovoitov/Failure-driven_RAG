@@ -16,6 +16,7 @@ class JsonFormatter(logging.Formatter):
             "ts": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
+            "message": record.getMessage(),
         }
         payload = getattr(record, "payload", None)
         if isinstance(payload, dict):

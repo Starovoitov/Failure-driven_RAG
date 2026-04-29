@@ -51,6 +51,12 @@ export type FileStatusResponse = {
   items: FileStatusItem[];
 };
 
+export type FileContentResponse = {
+  path: string;
+  content_type: "json" | "jsonl" | "text" | "html";
+  content: string;
+};
+
 export type CommandParameter = {
   name: string;
   kind: "string" | "number" | "integer" | "boolean";

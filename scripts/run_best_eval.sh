@@ -11,7 +11,7 @@ if [[ -z "${EMBEDDING_MODEL// }" ]]; then
 fi
 FAISS_PATH="${FAISS_PATH:-data/faiss}"
 FAISS_INDEX_NAME="${FAISS_INDEX_NAME:-.}"
-RERANKER_MODEL="${RERANKER_MODEL:-artifacts/models/reranker-failure-driven}"
+RERANKER_MODEL="${RERANKER_MODEL:-models/reranker-failure-driven}"
 if [[ ! -d "$RERANKER_MODEL" ]]; then
   RERANKER_MODEL="cross-encoder/ms-marco-MiniLM-L-6-v2"
 fi

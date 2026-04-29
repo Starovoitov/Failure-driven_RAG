@@ -73,6 +73,16 @@ class FileStatusResponse(BaseModel):
     items: list[FileStatusItem]
 
 
+class FileContentRequest(BaseModel):
+    path: str
+
+
+class FileContentResponse(BaseModel):
+    path: str
+    content_type: Literal["json", "jsonl", "text", "html"]
+    content: str
+
+
 @dataclass
 class CommandSpec:
     model: type[BaseModel]
@@ -416,4 +426,35 @@ def files_status(payload: FileStatusRequest) -> FileStatusResponse:
             )
         )
     return FileStatusResponse(items=items)
+
+
+@app.post("/files/content", response_model=FileContentResponse, tags=["meta"])
+def file_content(payload: FileContentRequest) -> FileContentResponse:
+    raw_path = payload.path
+    cwd = Path.cwd().resolve()
+    resolved = (cwd / raw_path).resolve()
+    try:
+        resolved.relative_to(cwd)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"error": "Path outside workspace."}) from exc
+
+    if not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=404, detail={"error": f"File not found: {raw_path}"})
+
+    suffix = resolved.suffix.lower()
+    if suffix not in {".json", ".jsonl", ".txt", ".html"}:
+        raise HTTPException(
+            status_code=400, detail={"error": "Only .json, .jsonl, .txt, .html are supported."}
+        )
+
+    content = resolved.read_text(encoding="utf-8")
+    if suffix == ".json":
+        content_type: Literal["json", "jsonl", "text", "html"] = "json"
+    elif suffix == ".jsonl":
+        content_type = "jsonl"
+    elif suffix == ".html":
+        content_type = "html"
+    else:
+        content_type = "text"
+    return FileContentResponse(path=raw_path, content_type=content_type, content=content)
 

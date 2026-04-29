@@ -1,6 +1,7 @@
 import type {
   CommandName,
   CommandParameter,
+  FileContentResponse,
   FileStatusResponse,
   CommandTaskStartResponse,
   CommandTaskStatusResponse
@@ -53,6 +54,24 @@ export async function getFilesStatus(
     throw new Error(JSON.stringify(json, null, 2));
   }
   return json as FileStatusResponse;
+}
+
+export async function getFileContent(
+  baseUrl: string,
+  path: string
+): Promise<FileContentResponse> {
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/files/content`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ path })
+  });
+  const json = await response.json();
+  if (!response.ok) {
+    throw new Error(JSON.stringify(json, null, 2));
+  }
+  return json as FileContentResponse;
 }
 
 type SchemaProperty = {
